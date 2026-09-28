@@ -1,0 +1,83 @@
+/* ==========================================================================
+   Shikor — Dark Forest design tokens
+   Every colour, radius, shadow and motion curve in the app comes from here.
+   Change a value here and the whole app follows.
+   ========================================================================== */
+
+:root {
+  /* ---- surfaces: deep forest floor, lit from above ---------------------- */
+  --bg:             #0A1310;
+  --bg-elev:        #0E1A15;
+  --surface:        #111E18;
+  --surface-2:      #16271F;
+  --surface-3:      #1D3329;
+  --hairline:       rgba(255, 255, 255, .06);
+  --border:         #22382C;
+  --border-strong:  #2E4A3B;
+
+  /* ---- text ------------------------------------------------------------ */
+  --text:           #E8F2EC;
+  --text-dim:       #A8C0B4;
+  --muted:          #728B7E;
+  --faint:          #47594F;
+
+  /* ---- accents --------------------------------------------------------- */
+  --leaf:           #4ADE80;   /* primary — action, healthy */
+  --leaf-bright:    #6EE7A0;
+  --leaf-deep:      #16A34A;
+  --leaf-wash:      rgba(74, 222, 128, .12);
+  --leaf-line:      rgba(74, 222, 128, .28);
+
+  --water:          #38BDF8;   /* pump running */
+  --water-wash:     rgba(56, 189, 248, .12);
+  --water-line:     rgba(56, 189, 248, .30);
+
+  --warn:           #FBBF24;   /* soil dry, attention */
+  --warn-wash:      rgba(251, 191, 36, .12);
+  --warn-line:      rgba(251, 191, 36, .30);
+
+  --danger:         #FB7185;   /* stop, offline, error */
+  --danger-wash:    rgba(251, 113, 133, .12);
+  --danger-line:    rgba(251, 113, 133, .32);
+
+  /* ---- moisture ramp: parched -> soaked --------------------------------- */
+  --m-0:            #F97362;
+  --m-25:           #FBBF24;
+  --m-50:           #A3E635;
+  --m-75:           #4ADE80;
+  --m-100:          #2DD4BF;
+
+  /* ---- radii ------------------------------------------------------------ */
+  --r-xs:  8px;
+  --r-sm:  12px;
+  --r-md:  18px;
+  --r-lg:  24px;
+  --r-xl:  32px;
+  --r-pill: 999px;
+
+  /* ---- spacing ---------------------------------------------------------- */
+  --s-1: 4px;   --s-2: 8px;   --s-3: 12px;  --s-4: 16px;
+  --s-5: 20px;  --s-6: 24px;  --s-8: 32px;  --s-10: 40px;  --s-12: 48px;
+
+  /* ---- elevation -------------------------------------------------------- */
+  --shadow-sm:   0 1px 2px rgba(0,0,0,.4);
+  --shadow-md:   0 8px 24px -8px rgba(0,0,0,.6);
+  --shadow-lg:   0 24px 56px -16px rgba(0,0,0,.7);
+  --glow-leaf:   0 0 0 1px var(--leaf-line), 0 12px 40px -8px rgba(74,222,128,.35);
+  --glow-water:  0 0 0 1px var(--water-line), 0 12px 40px -8px rgba(56,189,248,.35);
+
+  /* ---- motion ----------------------------------------------------------- */
+  --ease-out:    cubic-bezier(.22, 1, .36, 1);
+  --ease-spring: cubic-bezier(.34, 1.4, .64, 1);
+  --t-fast:      140ms;
+  --t-base:      240ms;
+  --t-slow:      420ms;
+
+  /* ---- type ------------------------------------------------------------- */
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter",
+          "Segoe UI", Roboto, system-ui, sans-serif;
+  --num:  "SF Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+/* A light theme is deliberately not offered: the app is meant to be read on a
+   balcony at night. Forcing dark keeps the palette honest. */
