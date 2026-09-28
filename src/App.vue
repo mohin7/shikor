@@ -1,6 +1,9 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { connect, device, link, isWatering, isDry, actions } from './composables/useGarden'
+import {
+  connect, device, link, isWatering, isDry, isWaiting,
+  actions, isSnoozed, quietLabel
+} from './composables/useGarden'
 
 import StatusBar       from './components/StatusBar.vue'
 import MoistureGauge   from './components/MoistureGauge.vue'
@@ -29,6 +32,10 @@ const banner = computed(() => {
     return { k: 'warn', t: `মাটি শুকনো — ${device.soil}%, সীমা ${device.low}%` }
   return null
 })
+
+/* a parked request: quiet, but one tap away */
+const parked = computed(() =>
+  isWaiting.value && isSnoozed.value && !isWatering.value)
 </script>
 
 <template>
@@ -40,6 +47,13 @@ const banner = computed(() => {
       <section v-show="tab === 'home'" class="stack">
         <Transition name="fade">
           <div v-if="banner" class="banner" :class="banner.k">{{ banner.t }}</div>
+        </Transition>
+
+        <Transition name="fade">
+          <button v-if="parked" class="parked" @click="actions.unsnooze()">
+            <span class="pt">অনুরোধ পরে দেখতে বলেছ</span>
+            <span class="pd">{{ quietLabel }} চুপ থাকবে · দেখতে চাপো</span>
+          </button>
         </Transition>
 
         <div class="hero">
@@ -96,12 +110,6 @@ main {
 .hero { padding: 0; margin-bottom: -24px; }
 
 .act { margin-top: var(--s-2); }
-.stop {
-  padding: 11px 26px; border-radius: var(--r-pill);
-  background: var(--danger-wash); border: 1px solid var(--danger-line);
-  color: var(--danger); font-size: 13.5px; font-weight: 700;
-}
-.stop:active { transform: scale(.96); }
 
 .banner {
   padding: 12px 15px; border-radius: var(--r-md);
@@ -109,6 +117,16 @@ main {
 }
 .banner.warn { color: var(--warn);   background: var(--warn-wash);   border: 1px solid var(--warn-line); }
 .banner.bad  { color: var(--danger); background: var(--danger-wash); border: 1px solid var(--danger-line); }
+
+.parked {
+  width: 100%; text-align: left;
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 12px 15px; border-radius: var(--r-md);
+  background: var(--surface-2); border: 1px solid var(--border);
+}
+.parked:active { transform: scale(.99); }
+.pt { font-size: 13.5px; font-weight: 600; color: var(--text-dim); }
+.pd { font-size: 11.5px; color: var(--faint); }
 
 .about p { font-size: 13.5px; color: var(--text-dim); line-height: 1.6; }
 .about p + p { margin-top: var(--s-3); }

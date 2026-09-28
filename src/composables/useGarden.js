@@ -11,11 +11,16 @@ import mqtt from 'mqtt'
 const SETTINGS_KEY = 'shikor.settings.v1'
 const HISTORY_KEY  = 'shikor.history.v1'
 const LOG_KEY      = 'shikor.log.v1'
+const SNOOZE_KEY   = 'shikor.snooze.v1'
 
 const defaults = {
   broker: 'wss://broker.hivemq.com:8884/mqtt',
   base:   'garden/mohin7-4f82b1'
 }
+
+/* How long "not now" keeps the app quiet. The device snoozes itself too;
+   this is the phone's own copy so an un-flashed device still can't nag. */
+const SNOOZE_MS = 4 * 60 * 60 * 1000
 
 function loadJSON (key, fallback) {
   try { return { ...fallback, ...JSON.parse(localStorage.getItem(key) || '{}') } }
@@ -24,8 +29,14 @@ function loadJSON (key, fallback) {
 function loadArray (key) {
   try { return JSON.parse(localStorage.getItem(key) || '[]') } catch { return [] }
 }
+function loadNumber (key) {
+  try { return Number(localStorage.getItem(key)) || 0 } catch { return 0 }
+}
 function saveSafe (key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)) } catch { /* private mode */ }
+}
+function saveRaw (key, value) {
+  try { localStorage.setItem(key, String(value)) } catch { /* private mode */ }
 }
 
 export const settings = reactive(loadJSON(SETTINGS_KEY, defaults))
@@ -43,13 +54,14 @@ export const device = reactive({
   soil:     0,
   raw:      0,
   pump:     false,
-  state:    'IDLE',    // IDLE | WAITING | WATERING
+  state:    'IDLE',    // IDLE | WAITING | WATERING | MANUAL
   auto:     false,
   manual:   false,
   low:      35,
   target:   60,
   max:      20,
   left:     0,         // seconds remaining in the current run
+  quiet:    0,         // seconds until the device may ask again
   rssi:     null,
   uptime:   null,
   lastSeen: 0
@@ -63,6 +75,14 @@ export const ask = reactive({
   at: 0
 })
 
+/* When the user says "not now" we remember it, so the request does not pop
+   straight back up on the next telemetry message. */
+export const snoozeUntil = ref(loadNumber(SNOOZE_KEY))
+export const isSnoozed = computed(() => Date.now() < snoozeUntil.value)
+
+/* one request episode is shown at most once; a genuinely new one re-arms it */
+let shownThisEpisode = false
+
 /* ---- history and event log ----------------------------------------------- */
 export const history = ref(loadArray(HISTORY_KEY))   // [{t, soil}]
 export const log     = ref(loadArray(LOG_KEY))       // [{t, reason, seconds, from, to}]
@@ -73,6 +93,7 @@ const LOG_MAX     = 40
 /* ---- derived ------------------------------------------------------------- */
 export const isWatering = computed(() => device.pump || device.state === 'WATERING')
 export const isDry      = computed(() => device.seen && device.soil < device.low)
+export const isWaiting  = computed(() => device.state === 'WAITING')
 
 export const soilColour = computed(() => {
   const s = device.soil
@@ -91,6 +112,18 @@ export const soilLabel = computed(() => {
   if (s < 55) return 'মোটামুটি'
   if (s < 80) return 'ভালো'
   return 'ভেজা'
+})
+
+/* how long the app (or the device) stays quiet, in words */
+export const quietLabel = computed(() => {
+  const fromPhone  = Math.max(0, snoozeUntil.value - Date.now()) / 1000
+  const fromDevice = device.quiet || 0
+  const s = Math.max(fromPhone, fromDevice)
+  if (s <= 0) return ''
+  const h = Math.floor(s / 3600)
+  const m = Math.round((s % 3600) / 60)
+  if (h) return `${h} ঘণ্টা ${m ? m + ' মিনিট' : ''}`.trim()
+  return `${Math.max(1, m)} মিনিট`
 })
 
 /* ---- topics -------------------------------------------------------------- */
@@ -143,11 +176,10 @@ export function connect () {
     let msg
     try { msg = JSON.parse(text) } catch { return }
 
+    /* ---- a fresh permission request ---- */
     if (topic === t.ask) {
-      ask.open  = true
-      ask.soil  = msg.soil ?? device.soil
-      ask.limit = msg.limit ?? device.low
-      ask.at    = Date.now()
+      if (isSnoozed.value) return          // the user already said "not now"
+      openAsk(msg.soil ?? device.soil, msg.limit ?? device.low)
       return
     }
 
@@ -167,7 +199,7 @@ export function connect () {
         from: msg.from ?? null,
         to: msg.to ?? null
       })
-      ask.open = false
+      closeAsk()
       return
     }
 
@@ -177,6 +209,7 @@ export function connect () {
     if (typeof msg.target === 'number') device.target = msg.target
     if (typeof msg.max    === 'number') device.max    = msg.max
     if (typeof msg.left   === 'number') device.left   = msg.left
+    if (typeof msg.quiet  === 'number') device.quiet  = msg.quiet
     if (typeof msg.rssi   === 'number') device.rssi   = msg.rssi
     if (typeof msg.up     === 'number') device.uptime = msg.up
 
@@ -185,21 +218,32 @@ export function connect () {
     device.manual = !!msg.manual
     if (msg.state) device.state = msg.state
 
-    /* The ask message is not retained, so an app opened after the device
-       started waiting would never see it. The retained state tells us. */
+    /* The ask message is not retained, so an app opened while the device is
+       already waiting would never see it. The retained state fills that gap —
+       but only once per episode, and never while snoozed. */
     if (device.state === 'WAITING') {
-      if (!ask.open) {
-        ask.open  = true
-        ask.soil  = device.soil
-        ask.limit = device.low
-        ask.at    = ask.at || Date.now()
+      if (!ask.open && !shownThisEpisode && !isSnoozed.value) {
+        openAsk(device.soil, device.low)
       }
     } else {
-      ask.open = false
+      shownThisEpisode = false            // episode over, arm for the next one
+      if (ask.open) closeAsk()
     }
 
     pushHistory(device.soil)
   })
+}
+
+function openAsk (soil, limit) {
+  ask.open  = true
+  ask.soil  = soil
+  ask.limit = limit
+  ask.at    = Date.now()
+  shownThisEpisode = true
+}
+
+function closeAsk () {
+  ask.open = false
 }
 
 export function disconnect () {
@@ -247,15 +291,35 @@ function send (obj) {
   return true
 }
 
+function setSnooze (ms) {
+  snoozeUntil.value = Date.now() + ms
+  saveRaw(SNOOZE_KEY, snoozeUntil.value)
+}
+
+export function clearSnooze () {
+  snoozeUntil.value = 0
+  saveRaw(SNOOZE_KEY, 0)
+}
+
 export const actions = {
-  water   : (seconds) => send({ cmd: 'water_now', seconds }),
+  water: (seconds) => {
+    clearSnooze()                      // watering on purpose ends the quiet period
+    closeAsk()
+    return send({ cmd: 'water_now', seconds })
+  },
   stop    : ()        => send({ cmd: 'stop' }),
-  decline : ()        => { ask.open = false; return send({ cmd: 'no' }) },
+  decline : ()        => {
+    closeAsk()
+    setSnooze(SNOOZE_MS)               // "not now" has to mean not now
+    return send({ cmd: 'no' })
+  },
   autoOn  : ()        => send({ cmd: 'auto_on' }),
   autoOff : ()        => send({ cmd: 'auto_off' }),
   manualOn: ()        => send({ cmd: 'manual_on' }),
   manualOff:()        => send({ cmd: 'manual_off' }),
-  setLimits: (low, target, max) => send({ cmd: 'set', low, target, max })
+  setLimits: (low, target, max) => send({ cmd: 'set', low, target, max }),
+  /* let the user re-open the request they parked earlier */
+  unsnooze: () => { clearSnooze(); if (device.state === 'WAITING') openAsk(device.soil, device.low) }
 }
 
 /* ---- settings ------------------------------------------------------------- */

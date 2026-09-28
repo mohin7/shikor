@@ -69,9 +69,13 @@ void buildTopics() {
 }
 
 // ---------------- timing ----------------
-const unsigned long MIN_INTERVAL     = 60UL * 1000UL;          // gap between waterings (testing)
-const unsigned long APPROVAL_TIMEOUT = 30UL * 60UL * 1000UL;   // request expires
+const unsigned long MIN_INTERVAL     = 6UL * 3600UL * 1000UL;  // gap between two waterings
+const unsigned long SNOOZE_TIME      = 4UL * 3600UL * 1000UL;  // quiet period after "not now"
+const unsigned long APPROVAL_TIMEOUT = 30UL * 60UL * 1000UL;   // request expires on its own
 const unsigned long MANUAL_SAFETY    = 10UL * 60UL * 1000UL;   // manual mode hard stop
+
+/* While testing it helps to shorten these — 60000UL is one minute.
+   Put them back before leaving the device on the balcony. */
 
 // ---------------- stored settings ----------------
 Preferences prefs;
@@ -91,6 +95,7 @@ const char* stateName[] = {"IDLE", "WAITING", "WATERING", "MANUAL"};
 int  soil = 0, soilAtStart = 0, rawSoil = 0;
 int  runSeconds = 0;
 unsigned long tRead = 0, tSend = 0, tPumpStart = 0, tAsk = 0, tLastWater = 0;
+unsigned long tSnooze = 0;     // set when the user answers "not now"
 
 // ============================================================
 //  relay  —  active LOW, high-impedance when off
@@ -171,6 +176,17 @@ int readSoil() {
   return constrain(pct, 0, 100);
 }
 
+// seconds until the device is allowed to ask again (0 = free to ask)
+long quietFor() {
+  unsigned long now = millis();
+  long a = 0, b = 0;
+  if (tLastWater && now - tLastWater < MIN_INTERVAL)
+    a = (MIN_INTERVAL - (now - tLastWater)) / 1000UL;
+  if (tSnooze && now - tSnooze < SNOOZE_TIME)
+    b = (SNOOZE_TIME  - (now - tSnooze))    / 1000UL;
+  return a > b ? a : b;
+}
+
 // how many seconds are left in the current timed run
 int secondsLeft() {
   if (state != WATERING) return 0;
@@ -186,13 +202,14 @@ void sendData() {
   char msg[260];
   snprintf(msg, sizeof(msg),
     "{\"soil\":%d,\"raw\":%d,\"pump\":%d,\"state\":\"%s\",\"auto\":%s,\"manual\":%s,"
-    "\"low\":%d,\"target\":%d,\"max\":%d,\"left\":%d,\"rssi\":%d,\"up\":%lu}",
+    "\"low\":%d,\"target\":%d,\"max\":%d,\"left\":%d,\"quiet\":%ld,"
+    "\"rssi\":%d,\"up\":%lu}",
     soil, rawSoil,
     (state == WATERING || state == MANUAL) ? 1 : 0,
     stateName[state],
     autoMode ? "true" : "false",
     (state == MANUAL) ? "true" : "false",
-    LOW_LIMIT, TARGET, MAX_RUN_TIME, secondsLeft(),
+    LOW_LIMIT, TARGET, MAX_RUN_TIME, secondsLeft(), quietFor(),
     (int)WiFi.RSSI(), millis() / 1000UL);
 
   mqtt.publish(T_DATA, msg, true);        // RETAINED: the app sees state at once
@@ -214,6 +231,7 @@ void sendEvent(const char* why, int ran) {
 //  pump
 // ============================================================
 void pumpOn(int seconds, const char* why) {
+  tSnooze     = 0;                       // an explicit watering clears "not now"
   runSeconds  = constrain(seconds, 1, MAX_RUN_TIME);
   soilAtStart = soil;
   tPumpStart  = millis();
@@ -295,7 +313,15 @@ void onMessage(char* topic, byte* payload, unsigned int len) {
     stopAnything("stopped from app");
   }
   else if (cmd == "no") {
-    if (state == WAITING) { state = IDLE; Serial.println("user said not now"); sendData(); }
+    // Without this the device would see dry soil again on the very next loop
+    // and ask straight away. "Not now" has to mean not now.
+    if (state == WAITING) {
+      state   = IDLE;
+      tSnooze = millis();
+      Serial.printf("user said not now - quiet for %lu hours\n",
+                    SNOOZE_TIME / 3600000UL);
+      sendData();
+    }
   }
   else if (cmd == "manual_on")  { if (state != MANUAL) manualOn(); }
   else if (cmd == "manual_off") { if (state == MANUAL) manualOff("app"); }
@@ -443,17 +469,17 @@ void loop() {
   switch (state) {
 
     case IDLE:
-      if (soil < LOW_LIMIT &&
-          (tLastWater == 0 || now - tLastWater > MIN_INTERVAL)) {
+      if (soil < LOW_LIMIT && quietFor() == 0) {
         if (autoMode) pumpOn(MAX_RUN_TIME, "auto");
         else          askPermission();
       }
       break;
 
     case WAITING:
-      if (now - tAsk > APPROVAL_TIMEOUT) {      // no answer -> cancel
-        state = IDLE;
-        Serial.println("request expired");
+      if (now - tAsk > APPROVAL_TIMEOUT) {      // nobody answered
+        state   = IDLE;
+        tSnooze = millis();                     // don't nag - try again later
+        Serial.println("request expired - going quiet");
         sendData();
       }
       break;
