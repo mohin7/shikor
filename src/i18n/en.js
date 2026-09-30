@@ -48,6 +48,7 @@ export default {
   /* duration */
   'dur.title': 'Duration',
   'dur.custom': 'Custom',
+  'dur.summary': 'The pump will run for {n} seconds.',
   'dur.capped': 'The device stops every run at {max}s. Raise the limit under Settings → Watering rules to run longer.',
 
   /* mode */

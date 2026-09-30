@@ -20,7 +20,7 @@ const capped = computed(() => device.seen && model.value > device.max)
   <div class="card">
     <div class="between" style="margin-bottom:var(--s-4)">
       <div class="card-title" style="margin:0"><span class="ti"><Icon name="timer" :size="15" /></span>{{ t('dur.title') }}</div>
-      <div v-if="custom" class="pill num">{{ model }}s</div>
+      <div class="pill num">{{ model }}<small>s</small></div>
     </div>
 
     <div class="chips">
@@ -36,16 +36,19 @@ const capped = computed(() => device.seen && model.value > device.max)
       <div class="ends num"><span>1s</span><span>60s</span></div>
     </div>
 
+    <p class="sum">{{ t('dur.summary', { n: capped ? device.max : model }) }}</p>
+
     <p v-if="capped" class="cap">{{ t('dur.capped', { max: device.max }) }}</p>
   </div>
 </template>
 
 <style scoped>
 .pill {
-  font-size: 13px; font-weight: 700; color: var(--leaf);
-  background: var(--leaf-wash); border: 1px solid var(--leaf-line);
-  padding: 3px 10px; border-radius: var(--r-pill);
+  font-size: 20px; font-weight: 700; color: var(--leaf); line-height: 1;
+  padding: 4px 2px;
 }
+.pill small { font-size: 12px; font-weight: 600; margin-left: 1px; color: var(--muted); }
+.sum { margin-top: var(--s-3); font-size: 12.5px; color: var(--muted); }
 .chips { display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--s-2); }
 .chip {
   padding: 11px 0; border-radius: var(--r-sm);
@@ -55,8 +58,9 @@ const capped = computed(() => device.seen && model.value > device.max)
 }
 .chip:active { transform: scale(.94); }
 .chip.on {
-  background: var(--leaf-wash); border-color: var(--leaf-line);
-  color: var(--leaf); box-shadow: var(--shadow-sm);
+  background: linear-gradient(165deg, var(--btn-leaf-a), var(--btn-leaf-b));
+  border-color: transparent; color: var(--on-leaf);
+  box-shadow: var(--glow-leaf);
 }
 .slider { margin-top: var(--s-4); }
 .cap {
