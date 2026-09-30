@@ -93,7 +93,30 @@ const HISTORY_MAX = 120
 const LOG_MAX     = 40
 
 /* ---- derived ------------------------------------------------------------- */
-export const isWatering = computed(() => device.pump || device.state === 'WATERING')
+export const isWatering = computed(() => device.online && (device.pump || device.state === 'WATERING'))
+/* Smooth countdown. The device reports whole seconds every ~2 s, so showing
+   `device.left` directly makes the timer and the bar jump. Instead the app keeps
+   its own end-of-run time and ticks ~10x a second; each report only re-syncs it
+   when it has drifted by more than a second and a half. */
+const runEnd   = ref(0)              // ms timestamp when the run should end
+const runTotal = ref(0)              // seconds the run was started with
+const nowMs    = ref(Date.now())
+let   tick     = null
+function syncRun (left) {
+  const target = Date.now() + (left + 0.5) * 1000       // `left` is floored: add half a second
+  if (!runEnd.value || Math.abs(target - runEnd.value) > 1500) runEnd.value = target
+  if (!runTotal.value || left > runTotal.value) runTotal.value = left
+  if (!tick) tick = setInterval(() => { nowMs.value = Date.now() }, 100)
+}
+function stopRunClock () {
+  runEnd.value = 0; runTotal.value = 0
+  if (tick) { clearInterval(tick); tick = null }
+}
+export const runLeft = computed(() =>
+  runEnd.value ? Math.max(0, (runEnd.value - nowMs.value) / 1000) : 0)
+export const runShare = computed(() =>
+  runTotal.value ? Math.min(1, runLeft.value / runTotal.value) : 0)
+
 export const isDry      = computed(() => device.seen && !device.fault && device.soil < device.low)
 export const isWaiting  = computed(() => device.state === 'WAITING')
 
@@ -224,6 +247,9 @@ export function connect () {
     if (typeof msg.rssi   === 'number') device.rssi   = msg.rssi
     if (typeof msg.up     === 'number') device.uptime = msg.up
 
+    if (msg.pump && msg.state === 'WATERING' && typeof msg.left === 'number') syncRun(msg.left)
+    else if (!msg.pump || msg.state !== 'WATERING') stopRunClock()
+
     device.fault  = !!msg.fault
     device.pump   = !!msg.pump
     device.auto   = !!msg.auto
@@ -267,7 +293,7 @@ export function disconnect () {
 /* the device speaks every 10s; if 40s pass in silence, call it offline */
 function armStaleTimer () {
   clearTimeout(staleTimer)
-  staleTimer = setTimeout(() => { device.online = false }, 40000)
+  staleTimer = setTimeout(() => { device.online = false }, 25000)
 }
 
 /* ---- buffers -------------------------------------------------------------- */
@@ -330,6 +356,15 @@ export const actions = {
   manualOn: ()        => send({ cmd: 'manual_on' }),
   manualOff:()        => send({ cmd: 'manual_off' }),
   setLimits: (low, target, max) => send({ cmd: 'set', low, target, max }),
+  /* reload: drop the link, reconnect, and ask the device for a fresh reading */
+  refresh: () => {
+    connect()
+    const t0 = Date.now()
+    const wait = setInterval(() => {
+      if (link.status === 'connected') { clearInterval(wait); send({ cmd: 'ping' }) }
+      else if (Date.now() - t0 > 10000) clearInterval(wait)
+    }, 250)
+  },
   /* let the user re-open the request they parked earlier */
   unsnooze: () => { clearSnooze(); if (device.state === 'WAITING') openAsk(device.soil, device.low) }
 }

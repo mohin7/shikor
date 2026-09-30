@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import {
-  connect, device, link, isWatering, isDry, isWaiting,
+  connect, device, link, isWatering, isWaiting,
   actions, isSnoozed, quietLabel
 } from './composables/useGarden'
 import { t } from './composables/useI18n'

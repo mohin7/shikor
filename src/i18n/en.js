@@ -11,6 +11,7 @@ export default {
   'status.searching': 'Finding device…',
   'status.offline': 'Device offline',
   'status.online': 'Online',
+  'status.reload': 'Reload',
 
   /* banners on Home */
   'banner.broker': "Can't reach the broker — check your internet.",

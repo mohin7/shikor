@@ -11,6 +11,7 @@ export default {
   'status.searching': 'ডিভাইস খুঁজছি…',
   'status.offline': 'ডিভাইস অফলাইন',
   'status.online': 'অনলাইন',
+  'status.reload': 'রিলোড',
 
   /* banners on Home */
   'banner.broker': 'ব্রোকারে যুক্ত হওয়া যাচ্ছে না — ইন্টারনেট দেখো।',

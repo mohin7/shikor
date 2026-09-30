@@ -4,7 +4,13 @@
   Board : ESP32 DevKit (CH340, USB-C)
   ============================================================
 
-  NEW IN v3 — no laptop needed to change Wi-Fi
+  WHAT IT DOES
+    Reads a capacitive soil sensor every 5 s. When the soil is dry it asks the
+    phone app for permission (or, in "water without asking" mode, just waters),
+    runs the pump through a relay, and stops at the target moisture or after a
+    time limit. Red / green LEDs show the soil state on the device itself.
+
+  WI-FI WITHOUT A LAPTOP
     On first boot (or after a reset) the device puts up its own hotspot called
     "Shikor-Setup" (password: shikor123). Join it from a phone; a setup page
     opens by itself. Pick the Wi-Fi, type the password, Save. The device
@@ -14,27 +20,28 @@
     does NOT trap the device in setup mode: it keeps sensing, showing the
     LEDs and watering on its own, and rejoins the network when it returns.
 
-  WHAT CHANGED FROM v1
-    · telemetry is published RETAINED, so the app shows real state instantly
-    · the app can change the limits:  {"cmd":"set","low":30,"target":65,"max":25}
-    · limits survive a reboot (stored in NVS via Preferences)
-    · manual pump mode:  {"cmd":"manual_on"} / {"cmd":"manual_off"}
-    · reports Wi-Fi signal, uptime and seconds remaining
-    · relay is driven ACTIVE LOW with a high-impedance OFF
-    · proper key lookup in the incoming JSON (v1 matched loose substrings)
-
-  WIRING  (unchanged — see wiring_full.png)
+  WIRING
     Sensor  VCC -> 3V3     GND -> GND     AOUT -> D34
-    Relay   DC+ -> VIN     DC- -> GND     IN   -> D26
-    Relay   COM -> VIN (same breadboard row)      NO -> pump (+)
-    Pump    (-) -> GND                            NC -> empty
+    Relay   DC+ -> VIN (5V, NOT 3V3)   DC- -> GND     IN -> D26
+    Relay   COM -> pump supply (+)                    NO -> pump (+)
+    Pump    (-) -> supply GND                         NC -> empty
     GREEN LED  D25 -> 220R -> LED (long leg) ... short leg -> GND   soil OK
     RED   LED  D27 -> 220R -> LED (long leg) ... short leg -> GND   soil DRY
     (dry = below the "low" limit, 35% by default. The LEDs run on the device
      itself, so they work with no Wi-Fi and no phone.)
 
+  POWER  (the usual reason for random resets when the pump starts)
+    · Run the ESP32 from a 5V 2A phone charger, not a laptop USB port.
+    · Best: give the pump its own supply (power bank / 5V adapter) and join
+      the two grounds. The relay then only switches the pump's wire.
+    · 470-1000 uF across the ESP32's 5V and GND, 100 nF across the pump's two
+      terminals, and a diode (1N4007, stripe toward +) across the pump help.
+    If the ESP32 does reset, the relay falls back to OFF by itself.
+
   BEFORE UPLOADING
-    Install the library:  Tools -> Manage Libraries -> "WiFiManager" by tzapu
+    Tools -> Manage Libraries -> install "WiFiManager" by tzapu
+                              and "PubSubClient" by Nick O'Leary
+    Tools -> Upload Speed -> 115200 (921600 often fails on cheap USB cables).
     Nothing else. Wi-Fi and the topic are set from the phone.
 */
 
@@ -43,59 +50,67 @@
 #include <PubSubClient.h>
 #include <Preferences.h>
 
-// ---------------- pins ----------------
+// ============================================================
+//  CONFIG — everything you might want to change is in this block
+// ============================================================
+
+// ---- pins ----
 #define SOIL_PIN   34      // sensor AOUT  (input only, ADC1)
 #define RELAY_PIN  26      // relay IN
-#define LED_GREEN  25      // soil OK  (not dry)  - through a 220R resistor
-#define LED_RED    27      // soil DRY            - through a 220R resistor
+#define LED_GREEN  25      // soil OK  (not dry)
+#define LED_RED    27      // soil DRY (blinks on a sensor fault)
+#define RESET_PIN  0       // the BOOT button
 
-// ---------------- sensor calibration ----------------
-// Measured on this probe with the Serial Plotter.
+// ---- sensor calibration (measured on this probe with the Serial Plotter) ----
 const int DRY_VALUE = 2586;    // probe in dry air
 const int WET_VALUE = 1178;    // probe in water, up to the white line
+// A healthy probe stays between roughly 1100 (water) and 2600 (air). Near 0 means
+// unpowered or shorted (it would read "100% wet" and never water); near 4095
+// means the signal is tied high. Outside this window the reading is not trusted.
+const int FAULT_BELOW = 500;
+const int FAULT_ABOVE = 3500;
 
-// ---------------- network ----------------
-// Wi-Fi is NOT written here any more. The device asks for it over its own
-// hotspot on first boot and keeps it in flash afterwards.
+// ---- network ----
 #define SETUP_AP_NAME "Shikor-Setup"
 #define SETUP_AP_PASS "shikor123"     // at least 8 characters
-#define RESET_PIN     0               // the BOOT button
+const char*    MQTT_HOST = "broker.hivemq.com";
+const uint16_t MQTT_PORT = 1883;
 
 // The public broker has no password: anyone who knows this string can run the
 // pump. Keep the random part, and put the same string in the app's Settings.
 // It can also be changed from the setup page, without a laptop.
 char topicBase[48] = "garden/mohin7-4f82b1";
 
-char T_DATA[64], T_ASK[64], T_CMD[64], T_STATUS[64];
-
-void buildTopics() {
-  snprintf(T_DATA,   sizeof(T_DATA),   "%s/data",   topicBase);
-  snprintf(T_ASK,    sizeof(T_ASK),    "%s/ask",    topicBase);
-  snprintf(T_CMD,    sizeof(T_CMD),    "%s/cmd",    topicBase);
-  snprintf(T_STATUS, sizeof(T_STATUS), "%s/status", topicBase);
-}
-
-// ---------------- timing ----------------
+// ---- timing (milliseconds) ----
 const unsigned long MIN_INTERVAL     = 6UL * 3600UL * 1000UL;  // gap between two waterings
 const unsigned long SNOOZE_TIME      = 4UL * 3600UL * 1000UL;  // quiet period after "not now"
-const unsigned long APPROVAL_TIMEOUT = 30UL * 60UL * 1000UL;   // request expires on its own
+const unsigned long APPROVAL_TIMEOUT = 30UL * 60UL * 1000UL;   // a request expires on its own
 const unsigned long MANUAL_SAFETY    = 10UL * 60UL * 1000UL;   // manual mode hard stop
-
-/* While testing it helps to shorten these — 60000UL is one minute.
+const unsigned long SENSOR_EVERY     = 5000UL;    // read the soil
+const unsigned long SEND_EVERY_IDLE  = 10000UL;   // telemetry, pump off
+const unsigned long SEND_EVERY_PUMP  = 2000UL;    // telemetry, pump on
+const unsigned long MQTT_RETRY_EVERY = 5000UL;    // broker unreachable
+const unsigned long WIFI_RETRY_EVERY = 30000UL;   // router away
+/* While testing it helps to shorten the long ones — 60000UL is one minute.
    Put them back before leaving the device on the balcony. */
 
-// ---------------- stored settings ----------------
+// ============================================================
+//  state
+// ============================================================
+
+// limits below are the defaults; the app can change them and they are stored in flash
 Preferences prefs;
 int  LOW_LIMIT    = 35;     // % below this the soil counts as dry
 int  TARGET       = 60;     // % stop the pump at this level
 int  MAX_RUN_TIME = 20;     // seconds, hard limit for one timed run
-bool autoMode     = false;  // true = water by itself (vacation mode)
+bool autoMode     = false;  // true = water by itself ("water without asking")
 bool wifiEverOk   = false;  // true once a network has been joined; see connectWiFi()
 
 WiFiClient   net;
 PubSubClient mqtt(net);
 
-// ---------------- state ----------------
+char T_DATA[64], T_ASK[64], T_CMD[64], T_STATUS[64];
+
 enum State { IDLE, WAITING, WATERING, MANUAL };
 State state = IDLE;
 const char* stateName[] = {"IDLE", "WAITING", "WATERING", "MANUAL"};
@@ -106,6 +121,16 @@ bool honourTarget = true;      // false for a run the user asked for by hand
 bool sensorFault  = false;     // probe reads impossible values (unplugged / shorted)
 unsigned long tRead = 0, tSend = 0, tPumpStart = 0, tAsk = 0, tLastWater = 0;
 unsigned long tSnooze = 0;     // set when the user answers "not now"
+unsigned long tWifiNudge = 0, tMqttTry = 0;
+
+inline bool isPumping() { return state == WATERING || state == MANUAL; }
+
+void buildTopics() {
+  snprintf(T_DATA,   sizeof(T_DATA),   "%s/data",   topicBase);
+  snprintf(T_ASK,    sizeof(T_ASK),    "%s/ask",    topicBase);
+  snprintf(T_CMD,    sizeof(T_CMD),    "%s/cmd",    topicBase);
+  snprintf(T_STATUS, sizeof(T_STATUS), "%s/status", topicBase);
+}
 
 // ============================================================
 //  relay  —  active LOW, high-impedance when off
@@ -119,10 +144,11 @@ inline void relayWrite(bool on) {
 }
 
 // ============================================================
-//  status LEDs  -  red = dry, green = not dry. Purely local.
+//  status LEDs  —  purely local, they never affect the pump.
+//    red = soil dry      green = soil not dry      red blinking = sensor fault
 // ============================================================
 void updateLeds() {
-  if (sensorFault) {                       // probe unplugged or shorted: blink red
+  if (sensorFault) {
     digitalWrite(LED_RED, (millis() / 400) % 2);
     digitalWrite(LED_GREEN, LOW);
     return;
@@ -130,6 +156,17 @@ void updateLeds() {
   bool dry = soil < LOW_LIMIT;
   digitalWrite(LED_RED,   dry ? HIGH : LOW);
   digitalWrite(LED_GREEN, dry ? LOW  : HIGH);
+}
+
+// Red, then green, at power-up. If one never lights, the fault is that LED's
+// wiring (polarity, resistor, pin, GND), not the code.
+void ledSelfTest() {
+  const int leds[2] = { LED_RED, LED_GREEN };
+  for (int i = 0; i < 2; i++) {
+    digitalWrite(leds[i], HIGH);
+    delay(350);
+    digitalWrite(leds[i], LOW);
+  }
 }
 
 // ============================================================
@@ -187,7 +224,7 @@ void saveSettings() {
 }
 
 // ============================================================
-//  sensor
+//  sensor and timers
 // ============================================================
 int readSoil() {
   long sum = 0;
@@ -196,10 +233,7 @@ int readSoil() {
     delay(5);
   }
   rawSoil = sum / 10;
-  // A healthy probe stays between roughly 1100 (water) and 2600 (air). Near 0
-  // means unpowered or shorted (it would read "100% wet" and never water);
-  // near 4095 means the signal is tied high. Either way don't trust it.
-  sensorFault = (rawSoil < 500 || rawSoil > 3500);
+  sensorFault = (rawSoil < FAULT_BELOW || rawSoil > FAULT_ABOVE);
   // capacitive sensor: HIGH raw = dry, LOW raw = wet
   int pct = map(rawSoil, DRY_VALUE, WET_VALUE, 0, 100);
   return constrain(pct, 0, 100);
@@ -234,7 +268,7 @@ void sendData() {
     "\"low\":%d,\"target\":%d,\"max\":%d,\"left\":%d,\"quiet\":%ld,"
     "\"fault\":%d,\"rssi\":%d,\"up\":%lu}",
     soil, rawSoil,
-    (state == WATERING || state == MANUAL) ? 1 : 0,
+    isPumping() ? 1 : 0,
     stateName[state],
     autoMode ? "true" : "false",
     (state == MANUAL) ? "true" : "false",
@@ -260,25 +294,14 @@ void sendEvent(const char* why, int ran) {
 //  pump
 // ============================================================
 void pumpOn(int seconds, const char* why) {
-  tSnooze     = 0;                       // an explicit watering clears "not now"
-  honourTarget = (strcmp(why, "app") != 0);   // a run asked for by hand is not cut short by the target
-  runSeconds  = constrain(seconds, 1, MAX_RUN_TIME);
-  soilAtStart = soil;
-  tPumpStart  = millis();
+  tSnooze      = 0;                            // an explicit watering clears "not now"
+  honourTarget = (strcmp(why, "app") != 0);    // a run asked for by hand is not cut short by the target
+  runSeconds   = constrain(seconds, 1, MAX_RUN_TIME);
+  soilAtStart  = soil;
+  tPumpStart   = millis();
   relayWrite(true);
   state = WATERING;
   Serial.printf(">> PUMP ON  (%s, %d s)\n", why, runSeconds);
-  sendData();
-}
-
-void pumpOff(const char* why) {
-  int ran = (millis() - tPumpStart) / 1000;
-  relayWrite(false);
-  state = IDLE;
-  tLastWater = millis();
-  Serial.printf(">> PUMP OFF (%s)  ran %ds,  soil %d%% -> %d%%\n",
-                why, ran, soilAtStart, soil);
-  sendEvent(why, ran);
   sendData();
 }
 
@@ -291,15 +314,22 @@ void manualOn() {
   sendData();
 }
 
-void manualOff(const char* why) {
+// The one place the relay goes off after a run. `event` is the reason the app's
+// history shows ("manual" for a manual run, otherwise why it stopped).
+void endRun(const char* why, const char* event) {
   int ran = (millis() - tPumpStart) / 1000;
+  const char* label = (state == MANUAL) ? "MANUAL" : "PUMP";
   relayWrite(false);
-  state = IDLE;
+  state      = IDLE;
   tLastWater = millis();
-  Serial.printf(">> MANUAL OFF (%s) ran %ds\n", why, ran);
-  sendEvent("manual", ran);
+  Serial.printf(">> %s OFF (%s)  ran %ds,  soil %d%% -> %d%%\n",
+                label, why, ran, soilAtStart, soil);
+  sendEvent(event, ran);
   sendData();
 }
+
+void pumpOff(const char* why)   { endRun(why, why); }
+void manualOff(const char* why) { endRun(why, "manual"); }
 
 void stopAnything(const char* why) {
   if (state == WATERING)    pumpOff(why);
@@ -361,7 +391,7 @@ void onMessage(char* topic, byte* payload, unsigned int len) {
   else if (cmd == "manual_off") { if (state == MANUAL) manualOff("app"); }
   else if (cmd == "auto_on")    {
     autoMode = true;
-    tSnooze  = 0;                              // vacation mode must not sit out an old "not now"
+    tSnooze  = 0;                              // must not sit out an old "not now"
     if (state == WAITING) state = IDLE;        // ...nor wait for a question nobody will answer
     saveSettings(); sendData();
   }
@@ -468,71 +498,28 @@ void connectMQTT() {
   }
 }
 
-// ============================================================
-//  setup / loop
-// ============================================================
-void setup() {
-  Serial.begin(115200);
-  pinMode(LED_GREEN, OUTPUT);
-  pinMode(LED_RED,   OUTPUT);
-  digitalWrite(LED_GREEN, LOW);
-  digitalWrite(LED_RED,   LOW);
-  relayWrite(false);                 // pump OFF at boot — always
-  delay(300);
-
-  Serial.println("\n=== Shikor — Smart Garden Water Pump (v3) ===");
-  Serial.println("relay: ACTIVE LOW, high-Z when off");
-
-  loadSettings();
-  Serial.printf("settings: low=%d target=%d max=%ds auto=%s\n",
-                LOW_LIMIT, TARGET, MAX_RUN_TIME, autoMode ? "on" : "off");
-  buildTopics();
-  Serial.printf("topic  : %s\n", topicBase);
-
-  // read the soil first, so the LEDs already tell the truth while Wi-Fi connects
-  soil = readSoil();
-  updateLeds();
-
-  connectWiFi();                     // false = router away; the loop keeps trying
-  mqtt.setServer("broker.hivemq.com", 1883);
-  mqtt.setCallback(onMessage);
-  mqtt.setBufferSize(384);           // the v2 payload is bigger than the default
-  if (WiFi.status() == WL_CONNECTED) connectMQTT();
-}
-
-unsigned long tWifiNudge = 0, tMqttTry = 0;
-
-void loop() {
-  bool pumping = (state == WATERING || state == MANUAL);
-
-  // ---- network upkeep. It must never stop the sensor, LEDs or pump timers
-  //      below: with no Wi-Fi the device still waters and still shows red/green.
+// Network upkeep. It must never stop the sensor, LEDs or pump timers: with no
+// Wi-Fi the device still waters and still shows red/green. A command handled in
+// mqtt.loop() may start the pump, which is why loop() takes its clock reading
+// only after this has run.
+void networkUpkeep() {
   if (WiFi.status() == WL_CONNECTED) {
-    if (mqtt.connected())   mqtt.loop();               // may run a command -> may start the pump
-    else if (!pumping && millis() - tMqttTry >= 5000UL) {   // one quiet attempt, never while pumping
-      tMqttTry = millis();
+    if (mqtt.connected()) {
+      mqtt.loop();
+    } else if (!isPumping() && millis() - tMqttTry >= MQTT_RETRY_EVERY) {
+      tMqttTry = millis();                 // one quiet attempt, never while pumping
       connectMQTT();
     }
-  } else if (millis() - tWifiNudge >= 30000UL) {       // router away: nudge the radio now and then
-    tWifiNudge = millis();
+  } else if (millis() - tWifiNudge >= WIFI_RETRY_EVERY) {
+    tWifiNudge = millis();                 // router away: nudge the radio now and then
     WiFi.reconnect();
   }
+}
 
-  // Take the time only AFTER the network part. A command handled above can have
-  // set tPumpStart a few ms "in the future" of an older reading, and the
-  // unsigned subtraction below would then wrap and stop the pump at once.
-  unsigned long now = millis();
-
-  // ---- read the soil every 5 seconds ----
-  if (now - tRead >= 5000) {
-    tRead = now;
-    soil = readSoil();
-    Serial.printf("raw=%4d   soil=%3d%%%s\n", rawSoil, soil,
-                  sensorFault ? "   SENSOR FAULT - check the probe wiring" : "");
-  }
-  updateLeds();                                        // every pass, so the fault blink is smooth
-
-  // ---- decide what to do ----
+// ============================================================
+//  the decision logic, one state at a time
+// ============================================================
+void runStateMachine(unsigned long now) {
   switch (state) {
 
     case IDLE:
@@ -567,10 +554,61 @@ void loop() {
       if (now - tPumpStart >= MANUAL_SAFETY) manualOff("safety limit");
       break;
   }
+}
 
-  // ---- telemetry: every 2 s while the pump runs, else every 10 s ----
-  unsigned long gap = (state == WATERING || state == MANUAL) ? 2000 : 10000;
-  if (now - tSend >= gap) {
+// ============================================================
+//  setup / loop
+// ============================================================
+void setup() {
+  Serial.begin(115200);
+  pinMode(LED_GREEN, OUTPUT);
+  pinMode(LED_RED,   OUTPUT);
+  digitalWrite(LED_GREEN, LOW);
+  digitalWrite(LED_RED,   LOW);
+  relayWrite(false);                 // pump OFF at boot — always
+  ledSelfTest();
+  delay(300);
+
+  Serial.println("\n=== Shikor — Smart Garden Water Pump (v3) ===");
+  Serial.println("relay: ACTIVE LOW, high-Z when off");
+
+  loadSettings();
+  Serial.printf("settings: low=%d target=%d max=%ds auto=%s\n",
+                LOW_LIMIT, TARGET, MAX_RUN_TIME, autoMode ? "on" : "off");
+  buildTopics();
+  Serial.printf("topic  : %s\n", topicBase);
+
+  // read the soil first, so the LEDs already tell the truth while Wi-Fi connects
+  soil = readSoil();
+  updateLeds();
+
+  connectWiFi();                     // false = router away; the loop keeps trying
+  mqtt.setServer(MQTT_HOST, MQTT_PORT);
+  mqtt.setCallback(onMessage);
+  mqtt.setBufferSize(384);           // the telemetry payload is bigger than the default
+  if (WiFi.status() == WL_CONNECTED) connectMQTT();
+}
+
+void loop() {
+  networkUpkeep();
+
+  // Take the time only AFTER the network part. A command handled above can have
+  // set tPumpStart a few ms "in the future" of an older reading, and the
+  // unsigned subtraction in the state machine would then wrap and stop the pump
+  // at once.
+  unsigned long now = millis();
+
+  if (now - tRead >= SENSOR_EVERY) {
+    tRead = now;
+    soil = readSoil();
+    Serial.printf("raw=%4d   soil=%3d%%%s\n", rawSoil, soil,
+                  sensorFault ? "   SENSOR FAULT - check the probe wiring" : "");
+  }
+  updateLeds();                      // every pass, so the fault blink is smooth
+
+  runStateMachine(now);
+
+  if (now - tSend >= (isPumping() ? SEND_EVERY_PUMP : SEND_EVERY_IDLE)) {
     tSend = now;
     sendData();
   }
@@ -579,14 +617,14 @@ void loop() {
 /*
   ------------------------------------------------------------
   COMMANDS the app (or any MQTT client) can publish to
-    garden/mohin7-4f82b1/cmd
+    garden/<topic base>/cmd
   ------------------------------------------------------------
-    {"cmd":"water_now","seconds":10}   run for 10 seconds
+    {"cmd":"water_now","seconds":10}   run for 10 seconds (capped at "max")
     {"cmd":"stop"}                     stop right now
     {"cmd":"no"}                       answer "not now" to a request
-    {"cmd":"manual_on"}                run until told to stop
+    {"cmd":"manual_on"}                run until told to stop (10 min hard limit)
     {"cmd":"manual_off"}               stop manual mode
-    {"cmd":"auto_on"}                  vacation mode on
+    {"cmd":"auto_on"}                  water without asking
     {"cmd":"auto_off"}                 back to asking permission
     {"cmd":"set","low":30,"target":65,"max":25}
     {"cmd":"ping"}                     push a fresh reading
@@ -596,8 +634,8 @@ void loop() {
   ------------------------------------------------------------
   1. Hold the BOOT button while plugging the device in. That forgets the
      saved network and opens the setup hotspot. (Moving the device somewhere
-     the old router is out of range is NOT enough any more: by design it keeps
-     running offline instead of waiting in setup mode.)
+     the old router is out of range is NOT enough: by design it keeps running
+     offline instead of waiting in setup mode.)
   2. On a phone, join the Wi-Fi network "Shikor-Setup" (password shikor123).
   3. A setup page opens by itself. If it does not, open http://192.168.4.1
   4. Configure WiFi -> pick the network -> type the password -> Save.

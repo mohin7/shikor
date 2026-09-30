@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { link, device } from '../composables/useGarden'
+import { link, device, actions } from '../composables/useGarden'
 import { t, lang, toggleLang } from '../composables/useI18n'
 import { theme, toggleTheme } from '../composables/useTheme'
 import Icon from './Icon.vue'
@@ -13,6 +13,8 @@ const state = computed(() => {
   return { k: 'ok', t: t('status.online') }
 })
 
+const spinning = computed(() => link.status === 'connecting')
+
 const isDark = computed(() => theme.value === 'dark')
 </script>
 
@@ -24,6 +26,11 @@ const isDark = computed(() => theme.value === 'dark')
     </div>
 
     <div class="right">
+      <button class="reload" :class="{ spin: spinning }" @click="actions.refresh"
+              :aria-label="t('status.reload')" :title="t('status.reload')">
+        <Icon name="refresh" :size="16" />
+      </button>
+
       <button class="lang" @click="toggleLang" :aria-label="t('look.toLang')" :title="t('look.toLang')">
         <span :class="{ on: lang === 'en' }">EN</span>
         <span :class="{ on: lang === 'bn' }">বাং</span>
@@ -92,6 +99,17 @@ const isDark = computed(() => theme.value === 'dark')
 .mode.dark .sun  { opacity: 1; transform: none; }
 .mode.dark .moon { opacity: 0; transform: rotate(70deg) scale(.6); }
 .mode:active { transform: scale(.92); }
+
+.reload {
+  width: 32px; height: 32px; flex: none; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--surface); border: 1px solid var(--border); color: var(--text-dim);
+  box-shadow: var(--shadow-sm);
+}
+.reload:active { transform: scale(.92); }
+.reload.spin svg { animation: turn .9s linear infinite; }
+@keyframes turn { to { transform: rotate(360deg); } }
+@media (max-width: 400px) { .name { display: none; } }
 
 .pill {
   display: flex; align-items: center; gap: 7px;

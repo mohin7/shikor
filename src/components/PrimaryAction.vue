@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { device, isWatering, actions, link } from '../composables/useGarden'
+import { device, isWatering, actions, link, runLeft, runShare } from '../composables/useGarden'
 import { t } from '../composables/useI18n'
 import Icon from './Icon.vue'
 
@@ -16,7 +16,7 @@ const effective = computed(() =>
 const label = computed(() => isWatering.value ? t('action.stop') : t('action.water'))
 
 const sub = computed(() => {
-  if (isWatering.value) return device.left > 0 ? t('action.left', { n: device.left }) : t('action.running')
+  if (isWatering.value) return runLeft.value > 0 ? t('action.left', { n: Math.ceil(runLeft.value) }) : t('action.running')
   if (!ready.value)     return link.status === 'connected' ? t('action.deviceOffline') : t('action.notConnected')
   return `${effective.value}s`
 })
@@ -24,8 +24,7 @@ const sub = computed(() => {
 /* how much of the run is still to come, as a share of the bar */
 const fill = computed(() => {
   if (!isWatering.value) return 0
-  const total = Math.max(device.left || 0, effective.value, 1)
-  return Math.min(100, ((device.left || 0) / total) * 100)
+  return device.manual ? 100 : runShare.value * 100
 })
 
 function press () {
@@ -106,7 +105,7 @@ function press () {
 .fill {
   position: absolute; inset: 0 auto 0 0;
   background: rgba(255,255,255,.22);
-  transition: width 1s linear;
+  transition: width .12s linear;
 }
 
 .inner {
