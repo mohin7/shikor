@@ -1,11 +1,133 @@
 /* ==========================================================================
-   Shikor — Dark Forest design tokens
+   Shikor — design tokens
+   Two themes share one set of names. Light is the default; dark is opted into
+   with  <html data-theme="dark">  (see composables/useTheme.js).
    Every colour, radius, shadow and motion curve in the app comes from here.
-   Change a value here and the whole app follows.
+   Change a value and the whole app follows.
    ========================================================================== */
 
+/* ---- theme-independent: shape, spacing, motion, type ---------------------- */
 :root {
-  /* ---- surfaces: deep forest floor, lit from above ---------------------- */
+  --r-xs:  8px;
+  --r-sm:  12px;
+  --r-md:  18px;
+  --r-lg:  24px;
+  --r-xl:  32px;
+  --r-pill: 999px;
+
+  --s-1: 4px;   --s-2: 8px;   --s-3: 12px;  --s-4: 16px;
+  --s-5: 20px;  --s-6: 24px;  --s-8: 32px;  --s-10: 40px;  --s-12: 48px;
+
+  --ease-out:    cubic-bezier(.22, 1, .36, 1);
+  --ease-spring: cubic-bezier(.34, 1.4, .64, 1);
+  --t-fast:      140ms;
+  --t-base:      240ms;
+  --t-slow:      420ms;
+
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter",
+          "Segoe UI", Roboto, "Noto Sans Bengali", "Kohinoor Bangla",
+          system-ui, sans-serif;
+  --num:  "SF Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+/* ==========================================================================
+   LIGHT  —  morning balcony: sage-white paper, deep-leaf ink
+   (also the fallback when no data-theme attribute is present)
+   ========================================================================== */
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* surfaces */
+  --bg:             #F3F6F1;
+  --bg-elev:        #ECF2E9;   /* inputs, inset wells */
+  --surface:        #FFFFFF;
+  --surface-2:      #FCFDFB;
+  --surface-3:      #E6EEE2;   /* chips, tracks, switches */
+  --hairline:       rgba(20, 50, 30, .08);
+  --border:         #DCE5D8;
+  --border-strong:  #C5D3C0;
+
+  /* text */
+  --text:           #14231A;
+  --text-dim:       #3A4E42;
+  --muted:          #586B5F;
+  --faint:          #647A6D;
+
+  /* accents — darkened so they read as text on white (AA) */
+  --leaf:           #15803D;
+  --leaf-bright:    #178A41;
+  --leaf-deep:      #116B34;
+  --leaf-wash:      rgba(21, 128, 61, .10);
+  --leaf-line:      rgba(21, 128, 61, .30);
+
+  --water:          #0369A1;
+  --water-wash:     rgba(3, 105, 161, .09);
+  --water-line:     rgba(3, 105, 161, .28);
+
+  --warn:           #B45309;
+  --warn-wash:      rgba(180, 83, 9, .10);
+  --warn-line:      rgba(180, 83, 9, .30);
+
+  --danger:         #BE123C;
+  --danger-wash:    rgba(190, 18, 60, .08);
+  --danger-line:    rgba(190, 18, 60, .28);
+
+  /* moisture ramp: parched -> soaked (graphics, not text) */
+  --m-0:            #E5533D;
+  --m-25:           #F59E0B;
+  --m-50:           #84CC16;
+  --m-75:           #22C55E;
+  --m-100:          #14B8A6;
+
+  /* primary buttons */
+  --btn-leaf-a:     #178A41;
+  --btn-leaf-b:     #116B34;
+  --btn-water-a:    #0284C7;
+  --btn-water-b:    #075985;
+  --on-leaf:        #FFFFFF;   /* label colour on a leaf / water surface */
+  --on-water:       #FFFFFF;
+
+  /* elevation */
+  /* elevation: three stacked layers (contact, body, ambient) read softer than one */
+  --shadow-sm:   0 1px 1px rgba(20, 50, 30, .05), 0 1px 3px rgba(20, 50, 30, .07);
+  --shadow-md:   0 1px 1px rgba(20, 50, 30, .03), 0 3px 6px -2px rgba(20, 50, 30, .05), 0 16px 28px -16px rgba(20, 50, 30, .20);
+  --shadow-lg:   0 -2px 6px rgba(20, 50, 30, .04), 0 -18px 44px -14px rgba(20, 50, 30, .28);
+  --glow-leaf:   inset 0 1px 0 rgba(255, 255, 255, .28), 0 2px 4px rgba(21, 128, 61, .25), 0 12px 22px -8px rgba(21, 128, 61, .50);
+  --glow-water:  inset 0 1px 0 rgba(255, 255, 255, .28), 0 2px 4px rgba(3, 105, 161, .25), 0 12px 22px -8px rgba(3, 105, 161, .50);
+  --card-edge:   inset 0 1px 0 rgba(255, 255, 255, .9);     /* lit top edge on white */
+
+  /* garden scene */
+  --sky-a:       #E3F1DF;
+  --sky-b:       #F7FBF4;
+  --shelf:       #D5E0D0;
+  --pot:         #C8734B;
+  --pot-shade:   #AC5B38;
+  --pot-rim:     #D98B65;
+  --soil-dry:    #CBA77D;
+  --soil-wet:    #6E4B33;
+  --plant:       #2E9D57;
+  --plant-deep:  #22804A;
+  --plant-wilt:  #A39B4C;
+  --drop-hi:     rgba(255, 255, 255, .75);
+
+  /* misc surfaces */
+  --scrim:       rgba(16, 32, 22, .42);
+  --bar-bg:      rgba(255, 255, 255, .84);
+  --card-hi:     rgba(255, 255, 255, 0);       /* top-edge highlight: none on white */
+  --knob:        #FFFFFF;
+  --knob-shadow: 0 1px 3px rgba(20, 50, 30, .35);
+  --canopy-1:    rgba(34, 197, 94, .13);
+  --canopy-2:    rgba(14, 165, 233, .07);
+  --meta-color:  #F3F6F1;
+}
+
+/* ==========================================================================
+   DARK  —  the night balcony: deep forest floor, lit from above
+   ========================================================================== */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
   --bg:             #0A1310;
   --bg-elev:        #0E1A15;
   --surface:        #111E18;
@@ -15,69 +137,68 @@
   --border:         #22382C;
   --border-strong:  #2E4A3B;
 
-  /* ---- text ------------------------------------------------------------ */
   --text:           #E8F2EC;
   --text-dim:       #A8C0B4;
-  --muted:          #728B7E;
-  --faint:          #47594F;
+  --muted:          #8AA396;
+  --faint:          #748C7F;
 
-  /* ---- accents --------------------------------------------------------- */
-  --leaf:           #4ADE80;   /* primary — action, healthy */
+  --leaf:           #4ADE80;
   --leaf-bright:    #6EE7A0;
   --leaf-deep:      #16A34A;
   --leaf-wash:      rgba(74, 222, 128, .12);
   --leaf-line:      rgba(74, 222, 128, .28);
 
-  --water:          #38BDF8;   /* pump running */
+  --water:          #38BDF8;
   --water-wash:     rgba(56, 189, 248, .12);
   --water-line:     rgba(56, 189, 248, .30);
 
-  --warn:           #FBBF24;   /* soil dry, attention */
+  --warn:           #FBBF24;
   --warn-wash:      rgba(251, 191, 36, .12);
   --warn-line:      rgba(251, 191, 36, .30);
 
-  --danger:         #FB7185;   /* stop, offline, error */
+  --danger:         #FB7185;
   --danger-wash:    rgba(251, 113, 133, .12);
   --danger-line:    rgba(251, 113, 133, .32);
 
-  /* ---- moisture ramp: parched -> soaked --------------------------------- */
   --m-0:            #F97362;
   --m-25:           #FBBF24;
   --m-50:           #A3E635;
   --m-75:           #4ADE80;
   --m-100:          #2DD4BF;
 
-  /* ---- radii ------------------------------------------------------------ */
-  --r-xs:  8px;
-  --r-sm:  12px;
-  --r-md:  18px;
-  --r-lg:  24px;
-  --r-xl:  32px;
-  --r-pill: 999px;
+  --btn-leaf-a:     #6EE7A0;
+  --btn-leaf-b:     #16A34A;
+  --btn-water-a:    #7DD3FC;
+  --btn-water-b:    #0369A1;
+  --on-leaf:        #06170E;
+  --on-water:       #05171F;
 
-  /* ---- spacing ---------------------------------------------------------- */
-  --s-1: 4px;   --s-2: 8px;   --s-3: 12px;  --s-4: 16px;
-  --s-5: 20px;  --s-6: 24px;  --s-8: 32px;  --s-10: 40px;  --s-12: 48px;
+  --shadow-sm:   0 1px 2px rgba(0, 0, 0, .35), 0 1px 1px rgba(0, 0, 0, .25);
+  --shadow-md:   0 1px 2px rgba(0, 0, 0, .3), 0 4px 10px -4px rgba(0, 0, 0, .35), 0 18px 32px -14px rgba(0, 0, 0, .55);
+  --shadow-lg:   0 -2px 8px rgba(0, 0, 0, .3), 0 -24px 56px -16px rgba(0, 0, 0, .7);
+  --glow-leaf:   inset 0 1px 0 rgba(255, 255, 255, .38), 0 0 0 1px var(--leaf-line), 0 12px 32px -10px rgba(74, 222, 128, .40);
+  --glow-water:  inset 0 1px 0 rgba(255, 255, 255, .38), 0 0 0 1px var(--water-line), 0 12px 32px -10px rgba(56, 189, 248, .40);
+  --card-edge:   inset 0 1px 0 rgba(255, 255, 255, .05);
 
-  /* ---- elevation -------------------------------------------------------- */
-  --shadow-sm:   0 1px 2px rgba(0,0,0,.4);
-  --shadow-md:   0 8px 24px -8px rgba(0,0,0,.6);
-  --shadow-lg:   0 24px 56px -16px rgba(0,0,0,.7);
-  --glow-leaf:   0 0 0 1px var(--leaf-line), 0 12px 40px -8px rgba(74,222,128,.35);
-  --glow-water:  0 0 0 1px var(--water-line), 0 12px 40px -8px rgba(56,189,248,.35);
+  --sky-a:       #12261D;
+  --sky-b:       #0E1B15;
+  --shelf:       #203A2E;
+  --pot:         #B5683F;
+  --pot-shade:   #8E4E2D;
+  --pot-rim:     #C77B52;
+  --soil-dry:    #8A6B4C;
+  --soil-wet:    #35241A;
+  --plant:       #4ADE80;
+  --plant-deep:  #2DB864;
+  --plant-wilt:  #B5AB56;
+  --drop-hi:     rgba(255, 255, 255, .6);
 
-  /* ---- motion ----------------------------------------------------------- */
-  --ease-out:    cubic-bezier(.22, 1, .36, 1);
-  --ease-spring: cubic-bezier(.34, 1.4, .64, 1);
-  --t-fast:      140ms;
-  --t-base:      240ms;
-  --t-slow:      420ms;
-
-  /* ---- type ------------------------------------------------------------- */
-  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter",
-          "Segoe UI", Roboto, system-ui, sans-serif;
-  --num:  "SF Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --scrim:       rgba(4, 10, 8, .66);
+  --bar-bg:      rgba(10, 19, 16, .82);
+  --card-hi:     rgba(255, 255, 255, .10);
+  --knob:        #E8F2EC;
+  --knob-shadow: 0 2px 10px rgba(0, 0, 0, .5);
+  --canopy-1:    rgba(74, 222, 128, .10);
+  --canopy-2:    rgba(56, 189, 248, .05);
+  --meta-color:  #0A1310;
 }
-
-/* A light theme is deliberately not offered: the app is meant to be read on a
-   balcony at night. Forcing dark keeps the palette honest. */

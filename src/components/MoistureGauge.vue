@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { device, isWatering, soilColour, soilLabel } from '../composables/useGarden'
+import { t } from '../composables/useI18n'
 
 const R = 100
 const FULL = 2 * Math.PI * R          // 628.3
@@ -54,7 +55,7 @@ const markerAngle = computed(() => -225 + (device.low / 100) * 270)
         <span class="n">{{ device.seen ? device.soil : '--' }}</span><span class="pct">%</span>
       </div>
       <div class="label">{{ soilLabel }}</div>
-      <div class="raw num" v-if="device.seen">raw {{ device.raw }}</div>
+      <div class="raw num" v-if="device.seen">{{ t('gauge.raw') }} {{ device.raw }}</div>
     </div>
   </div>
 </template>
@@ -65,7 +66,6 @@ const markerAngle = computed(() => -225 + (device.low / 100) * 270)
 
 .fill {
   transition: stroke-dasharray var(--t-slow) var(--ease-out);
-  filter: drop-shadow(0 0 12px color-mix(in srgb, currentColor 40%, transparent));
 }
 
 .readout {
@@ -83,7 +83,7 @@ const markerAngle = computed(() => -225 + (device.low / 100) * 270)
 /* while the pump runs the whole ring breathes */
 .gauge.watering .ring { animation: breathe 2.2s ease-in-out infinite; }
 @keyframes breathe {
-  0%, 100% { filter: drop-shadow(0 0 0 rgba(56,189,248,0)); }
-  50%      { filter: drop-shadow(0 0 22px rgba(56,189,248,.45)); }
+  0%, 100% { filter: drop-shadow(0 0 0 transparent); }
+  50%      { filter: drop-shadow(0 0 22px var(--water-line)); }
 }
 </style>

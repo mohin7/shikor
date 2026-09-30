@@ -1,37 +1,41 @@
 <script setup>
 import { computed } from 'vue'
 import { device, isWatering, actions, link } from '../composables/useGarden'
+import { t } from '../composables/useI18n'
+import Icon from './Icon.vue'
 
+const emit = defineEmits(['help'])
 const props = defineProps({ seconds: { type: Number, default: 10 } })
 
 const ready = computed(() => link.status === 'connected' && device.online)
 
-const label = computed(() => {
-  if (isWatering.value) return 'বন্ধ করো'
-  if (!ready.value)     return 'সংযোগ নেই'
-  return 'পানি দাও'
-})
+/* the device caps every run at its own "max"; show (and send) what will really run */
+const effective = computed(() =>
+  device.seen && device.max > 0 ? Math.min(props.seconds, device.max) : props.seconds)
+
+const label = computed(() => isWatering.value ? t('action.stop') : t('action.water'))
 
 const sub = computed(() => {
-  if (isWatering.value) return device.left > 0 ? `${device.left}s বাকি` : 'চলছে'
-  if (!ready.value)     return 'ডিভাইস অফলাইন'
-  return `${props.seconds}s`
+  if (isWatering.value) return device.left > 0 ? t('action.left', { n: device.left }) : t('action.running')
+  if (!ready.value)     return link.status === 'connected' ? t('action.deviceOffline') : t('action.notConnected')
+  return `${effective.value}s`
 })
 
 /* how much of the run is still to come, as a share of the bar */
 const fill = computed(() => {
   if (!isWatering.value) return 0
-  const total = Math.max(device.left || 0, props.seconds, 1)
+  const total = Math.max(device.left || 0, effective.value, 1)
   return Math.min(100, ((device.left || 0) / total) * 100)
 })
 
 function press () {
   if (!ready.value) return
-  isWatering.value ? actions.stop() : actions.water(props.seconds)
+  isWatering.value ? actions.stop() : actions.water(effective.value)
 }
 </script>
 
 <template>
+  <div class="outer">
   <div class="wrap">
     <button class="prime" :class="{ running: isWatering, off: !ready }"
             @click="press" :disabled="!ready">
@@ -39,49 +43,62 @@ function press () {
 
       <span class="inner">
         <span class="ico" aria-hidden="true">
-          <svg v-if="!isWatering" viewBox="0 0 24 24" width="22" height="22">
-            <path d="M12 2.7s6 6.6 6 10.6a6 6 0 1 1-12 0c0-4 6-10.6 6-10.6Z" fill="currentColor"/>
-          </svg>
-          <svg v-else viewBox="0 0 24 24" width="20" height="20">
-            <rect x="6" y="6" width="12" height="12" rx="2.5" fill="currentColor"/>
-          </svg>
+          <Icon :name="isWatering ? 'stop' : 'drop'" :size="22" fill />
         </span>
         <span class="txt">{{ label }}</span>
         <span class="sub num">{{ sub }}</span>
       </span>
     </button>
 
-    <button v-if="isWatering" class="stop" @click="actions.stop()" aria-label="জরুরি বন্ধ">
-      <svg viewBox="0 0 24 24" width="20" height="20">
-        <path d="M12 3v9m6.4-6.4a9 9 0 1 1-12.8 0" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round"/>
-      </svg>
+    <button v-if="isWatering" class="stop" @click="actions.stop()" :aria-label="t('action.emergency')">
+      <Icon name="power" :size="22" :stroke="2" />
     </button>
+  </div>
+
+  <div v-if="!ready && !isWatering" class="why" role="status">
+    <Icon name="info" :size="17" />
+    <div class="wt">
+      <b>{{ t('action.hint.title') }}</b>
+      <span>{{ link.status === 'connected' ? t('action.hint.body') : t('action.hint.broker') }}</span>
+      <button class="go" @click="emit('help')">{{ t('action.hint.open') }}</button>
+    </div>
+  </div>
   </div>
 </template>
 
 <style scoped>
+.outer { display: flex; flex-direction: column; gap: var(--s-3); }
+.why {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 12px 14px; border-radius: var(--r-md);
+  color: var(--text-dim); background: var(--surface-2); border: 1px solid var(--border);
+  font-size: 12.5px; line-height: 1.5; box-shadow: var(--shadow-sm);
+}
+.why svg { margin-top: 1px; color: var(--warn); }
+.wt { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
+.wt b { color: var(--text); font-size: 13px; }
+.go { margin-top: 6px; padding: 6px 12px; border-radius: var(--r-pill); font-size: 12px; font-weight: 700; color: var(--leaf); background: var(--leaf-wash); box-shadow: inset 0 0 0 1px var(--leaf-line); }
 .wrap { display: flex; gap: var(--s-3); align-items: stretch; }
 
 .prime {
-  position: relative; flex: 1; height: 70px; overflow: hidden;
+  position: relative; flex: 1; height: 68px; overflow: hidden;
   border-radius: var(--r-lg);
-  color: #06170E;
-  background: linear-gradient(165deg, var(--leaf-bright), var(--leaf-deep));
+  color: var(--on-leaf);
+  background: linear-gradient(165deg, var(--btn-leaf-a), var(--btn-leaf-b));
   box-shadow: var(--glow-leaf);
   transition: transform var(--t-fast) var(--ease-spring),
               background var(--t-base), box-shadow var(--t-base);
 }
 .prime:active { transform: scale(.985); }
 .prime.running {
-  color: #05171F;
-  background: linear-gradient(165deg, #7DD3FC, #0369A1);
+  color: var(--on-water);
+  background: linear-gradient(165deg, var(--btn-water-a), var(--btn-water-b));
   box-shadow: var(--glow-water);
 }
 .prime.off {
   color: var(--muted);
   background: linear-gradient(180deg, var(--surface-2), var(--surface));
-  box-shadow: inset 0 0 0 1px var(--border);
+  box-shadow: inset 0 0 0 1px var(--border), var(--shadow-sm);
   cursor: not-allowed;
 }
 
@@ -106,11 +123,12 @@ function press () {
 }
 
 .stop {
-  flex: none; width: 70px; border-radius: var(--r-lg);
+  flex: none; width: 68px; border-radius: var(--r-lg);
   display: grid; place-items: center;
   color: var(--danger);
   background: var(--danger-wash);
   border: 1px solid var(--danger-line);
+  box-shadow: var(--shadow-sm);
 }
 .stop:active { transform: scale(.95); }
 </style>

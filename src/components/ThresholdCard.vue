@@ -1,6 +1,8 @@
 <script setup>
 import { ref, watch, computed } from 'vue'
 import { device, actions, link } from '../composables/useGarden'
+import { t } from '../composables/useI18n'
+import Icon from './Icon.vue'
 
 const low    = ref(device.low)
 const target = ref(device.target)
@@ -30,40 +32,41 @@ function touched () {
 <template>
   <div class="card">
     <div class="between" style="margin-bottom:var(--s-5)">
-      <div class="card-title" style="margin:0">সীমা</div>
-      <span v-if="dirty" class="saving">সংরক্ষণ হচ্ছে…</span>
+      <div class="card-title" style="margin:0"><span class="ti plain"><Icon name="sliders" :size="15" /></span>{{ t('lim.title') }}</div>
+      <span v-if="dirty" class="saving">{{ t('lim.saving') }}</span>
     </div>
 
     <div class="field">
       <div class="between">
-        <label>শুকনো ধরা হবে</label>
+        <label>{{ t('lim.low') }}</label>
         <span class="v num" style="color:var(--warn)">{{ low }}%</span>
       </div>
       <input type="range" min="10" max="70" step="1" v-model.number="low"
              :disabled="!ready" @input="touched"
-             style="--thumb: var(--warn)">
-      <p class="hint">এর নিচে নামলে ডিভাইস পানি দিতে চাইবে।</p>
+             :style="{ '--thumb': 'var(--warn)', '--p': ((low - 10) / 60 * 100) + '%' }">
+      <p class="hint">{{ t('lim.low.hint') }}</p>
     </div>
 
     <div class="field">
       <div class="between">
-        <label>লক্ষ্য আর্দ্রতা</label>
+        <label>{{ t('lim.target') }}</label>
         <span class="v num" style="color:var(--leaf)">{{ target }}%</span>
       </div>
       <input type="range" min="30" max="95" step="1" v-model.number="target"
-             :disabled="!ready" @input="touched">
-      <p class="hint">এই মাত্রায় পৌঁছালে পাম্প নিজেই থামবে।</p>
+             :disabled="!ready" @input="touched"
+             :style="{ '--p': ((target - 30) / 65 * 100) + '%' }">
+      <p class="hint">{{ t('lim.target.hint') }}</p>
     </div>
 
     <div class="field last">
       <div class="between">
-        <label>সর্বোচ্চ রান টাইম</label>
+        <label>{{ t('lim.max') }}</label>
         <span class="v num" style="color:var(--water)">{{ max }}s</span>
       </div>
       <input type="range" min="5" max="60" step="1" v-model.number="max"
              :disabled="!ready" @input="touched"
-             style="--thumb: var(--water)">
-      <p class="hint">একবারে এর বেশি সময় পাম্প চলবে না — নিরাপত্তা সীমা।</p>
+             :style="{ '--thumb': 'var(--water)', '--p': ((max - 5) / 55 * 100) + '%' }">
+      <p class="hint">{{ t('lim.max.hint') }}</p>
     </div>
   </div>
 </template>

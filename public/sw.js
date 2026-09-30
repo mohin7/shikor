@@ -2,7 +2,7 @@
    Live device data always comes from the network (MQTT over WebSocket),
    so nothing about the garden is ever served stale. */
 
-const CACHE = 'shikor-shell-v1';
+const CACHE = 'shikor-shell-v2';
 
 self.addEventListener('install', (e) => {
   self.skipWaiting();

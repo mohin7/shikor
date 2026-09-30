@@ -1,6 +1,8 @@
 <script setup>
 import { ref } from 'vue'
 import { settings, saveSettings } from '../composables/useGarden'
+import { t } from '../composables/useI18n'
+import Icon from './Icon.vue'
 
 const broker = ref(settings.broker)
 const base   = ref(settings.base)
@@ -15,25 +17,21 @@ function apply () {
 
 <template>
   <div class="card">
-    <div class="card-title">সংযোগ</div>
+    <div class="card-title"><span class="ti water"><Icon name="link" :size="15" /></span>{{ t('conn.title') }}</div>
 
     <label class="f">
-      <span>MQTT ব্রোকার (WebSocket)</span>
+      <span>{{ t('conn.broker') }}</span>
       <input v-model="broker" spellcheck="false" autocapitalize="off" autocomplete="off">
     </label>
 
     <label class="f">
-      <span>টপিক বেস</span>
+      <span>{{ t('conn.topic') }}</span>
       <input v-model="base" spellcheck="false" autocapitalize="off" autocomplete="off">
     </label>
 
-    <p class="note">
-      ESP32-র কোডে <code>TOPIC_BASE</code> ঠিক এই লেখাটাই থাকতে হবে।
-      পাবলিক ব্রোকারে কোনো পাসওয়ার্ড নেই — টপিকের নাম যে জানে সে-ই পাম্প চালাতে পারবে,
-      তাই নামটা অনুমান করা কঠিন রাখো।
-    </p>
+    <p class="note">{{ t('conn.note') }}</p>
 
-    <button class="apply" @click="apply">{{ saved ? 'সংরক্ষিত ✓' : 'প্রয়োগ করে আবার যুক্ত হও' }}</button>
+    <button class="apply" @click="apply">{{ saved ? t('conn.saved') : t('conn.apply') }}</button>
   </div>
 </template>
 
@@ -44,15 +42,16 @@ function apply () {
   width: 100%; padding: 12px 14px; border-radius: var(--r-sm);
   background: var(--bg-elev); border: 1px solid var(--border);
   font-size: 13.5px; font-family: var(--num);
-  transition: border-color var(--t-fast);
+  transition: border-color var(--t-fast), box-shadow var(--t-fast);
 }
-.f input:focus { outline: none; border-color: var(--leaf-line); }
+.f input:focus { outline: none; border-color: var(--leaf); box-shadow: 0 0 0 3px var(--leaf-wash); }
 .note { font-size: 11.5px; color: var(--faint); line-height: 1.55; margin-bottom: var(--s-4); }
-.note code { color: var(--text-dim); font-family: var(--num); font-size: 11px; }
 .apply {
   width: 100%; padding: 13px 0; border-radius: var(--r-md);
   background: var(--surface-3); color: var(--text);
+  border: 1px solid var(--border);
   font-size: 14px; font-weight: 600;
+  transition: background var(--t-fast);
 }
 .apply:active { transform: scale(.98); }
 </style>

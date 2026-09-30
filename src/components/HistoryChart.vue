@@ -1,6 +1,8 @@
 <script setup>
 import { computed } from 'vue'
 import { history, device, clockTime } from '../composables/useGarden'
+import { t } from '../composables/useI18n'
+import Icon from './Icon.vue'
 
 const W = 320, H = 130, PAD = 6
 
@@ -28,12 +30,12 @@ const span = computed(() => {
 <template>
   <div class="card">
     <div class="between" style="margin-bottom:var(--s-4)">
-      <div class="card-title" style="margin:0">আর্দ্রতার গতিপথ</div>
+      <div class="card-title" style="margin:0"><span class="ti"><Icon name="chart" :size="15" /></span>{{ t('hist.title') }}</div>
       <span class="span num">{{ span }}</span>
     </div>
 
     <div v-if="!path" class="empty">
-      অ্যাপ খোলা রাখলে এখানে রিডিং জমতে থাকবে।
+      {{ t('hist.empty') }}
     </div>
 
     <svg v-else :viewBox="`0 0 ${W} ${H}`" class="chart" preserveAspectRatio="none">
@@ -58,8 +60,8 @@ const span = computed(() => {
     </svg>
 
     <div class="legend">
-      <span><i class="l"></i>আর্দ্রতা</span>
-      <span><i class="w"></i>শুকনো সীমা ({{ device.low }}%)</span>
+      <span><i class="l"></i>{{ t('hist.moisture') }}</span>
+      <span><i class="w"></i>{{ t('hist.dryLimit', { low: device.low }) }}</span>
     </div>
   </div>
 </template>

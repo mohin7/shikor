@@ -5,11 +5,14 @@
   ============================================================
 
   NEW IN v3 — no laptop needed to change Wi-Fi
-    On first boot, or whenever the saved network is out of range, the device
-    puts up its own hotspot called "Shikor-Setup" (password: shikor123).
-    Join it from a phone; a setup page opens by itself. Pick the Wi-Fi, type
-    the password, Save. The device remembers it and reboots into the network.
-    To forget everything later: hold the BOOT button while powering on.
+    On first boot (or after a reset) the device puts up its own hotspot called
+    "Shikor-Setup" (password: shikor123). Join it from a phone; a setup page
+    opens by itself. Pick the Wi-Fi, type the password, Save. The device
+    remembers it and reboots into the network.
+    To change the network later: hold the BOOT button while powering on.
+    Once a network is saved, a router that is switched off or out of range
+    does NOT trap the device in setup mode: it keeps sensing, showing the
+    LEDs and watering on its own, and rejoins the network when it returns.
 
   WHAT CHANGED FROM v1
     · telemetry is published RETAINED, so the app shows real state instantly
@@ -25,7 +28,10 @@
     Relay   DC+ -> VIN     DC- -> GND     IN   -> D26
     Relay   COM -> VIN (same breadboard row)      NO -> pump (+)
     Pump    (-) -> GND                            NC -> empty
-    LED     D25 -> 220R -> LED -> GND   (optional status light)
+    GREEN LED  D25 -> 220R -> LED (long leg) ... short leg -> GND   soil OK
+    RED   LED  D27 -> 220R -> LED (long leg) ... short leg -> GND   soil DRY
+    (dry = below the "low" limit, 35% by default. The LEDs run on the device
+     itself, so they work with no Wi-Fi and no phone.)
 
   BEFORE UPLOADING
     Install the library:  Tools -> Manage Libraries -> "WiFiManager" by tzapu
@@ -40,7 +46,8 @@
 // ---------------- pins ----------------
 #define SOIL_PIN   34      // sensor AOUT  (input only, ADC1)
 #define RELAY_PIN  26      // relay IN
-#define PUMP_LED   25      // status LED through a 220R resistor
+#define LED_GREEN  25      // soil OK  (not dry)  - through a 220R resistor
+#define LED_RED    27      // soil DRY            - through a 220R resistor
 
 // ---------------- sensor calibration ----------------
 // Measured on this probe with the Serial Plotter.
@@ -83,6 +90,7 @@ int  LOW_LIMIT    = 35;     // % below this the soil counts as dry
 int  TARGET       = 60;     // % stop the pump at this level
 int  MAX_RUN_TIME = 20;     // seconds, hard limit for one timed run
 bool autoMode     = false;  // true = water by itself (vacation mode)
+bool wifiEverOk   = false;  // true once a network has been joined; see connectWiFi()
 
 WiFiClient   net;
 PubSubClient mqtt(net);
@@ -94,6 +102,8 @@ const char* stateName[] = {"IDLE", "WAITING", "WATERING", "MANUAL"};
 
 int  soil = 0, soilAtStart = 0, rawSoil = 0;
 int  runSeconds = 0;
+bool honourTarget = true;      // false for a run the user asked for by hand
+bool sensorFault  = false;     // probe reads impossible values (unplugged / shorted)
 unsigned long tRead = 0, tSend = 0, tPumpStart = 0, tAsk = 0, tLastWater = 0;
 unsigned long tSnooze = 0;     // set when the user answers "not now"
 
@@ -106,7 +116,20 @@ unsigned long tSnooze = 0;     // set when the user answers "not now"
 inline void relayWrite(bool on) {
   if (on) { pinMode(RELAY_PIN, OUTPUT); digitalWrite(RELAY_PIN, LOW); }
   else    { pinMode(RELAY_PIN, INPUT); }
-  digitalWrite(PUMP_LED, on ? HIGH : LOW);
+}
+
+// ============================================================
+//  status LEDs  -  red = dry, green = not dry. Purely local.
+// ============================================================
+void updateLeds() {
+  if (sensorFault) {                       // probe unplugged or shorted: blink red
+    digitalWrite(LED_RED, (millis() / 400) % 2);
+    digitalWrite(LED_GREEN, LOW);
+    return;
+  }
+  bool dry = soil < LOW_LIMIT;
+  digitalWrite(LED_RED,   dry ? HIGH : LOW);
+  digitalWrite(LED_GREEN, dry ? LOW  : HIGH);
 }
 
 // ============================================================
@@ -143,6 +166,7 @@ void loadSettings() {
   TARGET       = prefs.getInt("target", TARGET);
   MAX_RUN_TIME = prefs.getInt("max",    MAX_RUN_TIME);
   autoMode     = prefs.getBool("auto",  autoMode);
+  wifiEverOk   = prefs.getBool("wifiok", false);
   String t     = prefs.getString("topic", topicBase);
   if (t.length() > 3 && t.length() < sizeof(topicBase)) {
     strncpy(topicBase, t.c_str(), sizeof(topicBase) - 1);
@@ -157,6 +181,7 @@ void saveSettings() {
   prefs.putInt("target", TARGET);
   prefs.putInt("max",    MAX_RUN_TIME);
   prefs.putBool("auto",  autoMode);
+  prefs.putBool("wifiok", wifiEverOk);
   prefs.putString("topic", topicBase);
   prefs.end();
 }
@@ -171,6 +196,10 @@ int readSoil() {
     delay(5);
   }
   rawSoil = sum / 10;
+  // A healthy probe stays between roughly 1100 (water) and 2600 (air). Near 0
+  // means unpowered or shorted (it would read "100% wet" and never water);
+  // near 4095 means the signal is tied high. Either way don't trust it.
+  sensorFault = (rawSoil < 500 || rawSoil > 3500);
   // capacitive sensor: HIGH raw = dry, LOW raw = wet
   int pct = map(rawSoil, DRY_VALUE, WET_VALUE, 0, 100);
   return constrain(pct, 0, 100);
@@ -203,14 +232,14 @@ void sendData() {
   snprintf(msg, sizeof(msg),
     "{\"soil\":%d,\"raw\":%d,\"pump\":%d,\"state\":\"%s\",\"auto\":%s,\"manual\":%s,"
     "\"low\":%d,\"target\":%d,\"max\":%d,\"left\":%d,\"quiet\":%ld,"
-    "\"rssi\":%d,\"up\":%lu}",
+    "\"fault\":%d,\"rssi\":%d,\"up\":%lu}",
     soil, rawSoil,
     (state == WATERING || state == MANUAL) ? 1 : 0,
     stateName[state],
     autoMode ? "true" : "false",
     (state == MANUAL) ? "true" : "false",
     LOW_LIMIT, TARGET, MAX_RUN_TIME, secondsLeft(), quietFor(),
-    (int)WiFi.RSSI(), millis() / 1000UL);
+    sensorFault ? 1 : 0, (int)WiFi.RSSI(), millis() / 1000UL);
 
   mqtt.publish(T_DATA, msg, true);        // RETAINED: the app sees state at once
   Serial.print("[send] ");
@@ -232,6 +261,7 @@ void sendEvent(const char* why, int ran) {
 // ============================================================
 void pumpOn(int seconds, const char* why) {
   tSnooze     = 0;                       // an explicit watering clears "not now"
+  honourTarget = (strcmp(why, "app") != 0);   // a run asked for by hand is not cut short by the target
   runSeconds  = constrain(seconds, 1, MAX_RUN_TIME);
   soilAtStart = soil;
   tPumpStart  = millis();
@@ -274,7 +304,11 @@ void manualOff(const char* why) {
 void stopAnything(const char* why) {
   if (state == WATERING)    pumpOff(why);
   else if (state == MANUAL) manualOff(why);
-  else { state = IDLE; sendData(); }
+  else {
+    if (state == WAITING) tSnooze = millis();   // cancelling a request must not re-ask at once
+    state = IDLE;
+    sendData();
+  }
 }
 
 // ============================================================
@@ -325,7 +359,12 @@ void onMessage(char* topic, byte* payload, unsigned int len) {
   }
   else if (cmd == "manual_on")  { if (state != MANUAL) manualOn(); }
   else if (cmd == "manual_off") { if (state == MANUAL) manualOff("app"); }
-  else if (cmd == "auto_on")    { autoMode = true;  saveSettings(); sendData(); }
+  else if (cmd == "auto_on")    {
+    autoMode = true;
+    tSnooze  = 0;                              // vacation mode must not sit out an old "not now"
+    if (state == WAITING) state = IDLE;        // ...nor wait for a question nobody will answer
+    saveSettings(); sendData();
+  }
   else if (cmd == "auto_off")   { autoMode = false; saveSettings(); sendData(); }
   else if (cmd == "set") {
     LOW_LIMIT    = constrain(jsonInt(body, "low",    LOW_LIMIT),    5,  90);
@@ -350,13 +389,19 @@ void startPortal(const char* why) {
   Serial.println("[wifi] a setup page should open by itself");
 }
 
-void connectWiFi() {
+// Returns true when joined. A device that has never joined a network opens the
+// setup hotspot and waits for a phone (nothing to water yet, so blocking is
+// fine). A device that HAS joined one before never does: if the router is off
+// or away it returns false after ~20 s and the caller carries on offline, so
+// the sensor, the LEDs and the auto-watering keep running.
+bool connectWiFi() {
   WiFi.mode(WIFI_STA);
 
   WiFiManager wm;
   wm.setDebugOutput(false);
   wm.setConfigPortalTimeout(300);        // 5 minutes, then reboot and retry
   wm.setConnectTimeout(20);
+  wm.setEnableConfigPortal(!wifiEverOk);
 
   // one extra field on the setup page, so the topic is changeable too
   WiFiManagerParameter p_topic("topic", "MQTT topic base", topicBase,
@@ -368,16 +413,26 @@ void connectWiFi() {
   if (digitalRead(RESET_PIN) == LOW) {
     Serial.println("[wifi] BOOT held - forgetting the saved network");
     wm.resetSettings();
+    wifiEverOk = false;
+    saveSettings();
+    wm.setEnableConfigPortal(true);      // forgotten on purpose: open the setup page
     delay(400);
   }
 
-  startPortal("connecting, or opening the setup hotspot");
+  if (!wifiEverOk) startPortal("no saved network - opening the setup hotspot");
+  else             Serial.println("[wifi] joining the saved network...");
 
   if (!wm.autoConnect(SETUP_AP_NAME, SETUP_AP_PASS)) {
-    Serial.println("[wifi] setup timed out - restarting");
-    delay(1000);
-    ESP.restart();
+    if (!wifiEverOk) {
+      Serial.println("[wifi] setup timed out - restarting");
+      delay(1000);
+      ESP.restart();
+    }
+    Serial.println("[wifi] saved network not in reach - running offline, will keep trying");
+    return false;
   }
+
+  if (!wifiEverOk) { wifiEverOk = true; saveSettings(); }
 
   // the field may have been edited on the setup page
   const char* t = p_topic.getValue();
@@ -393,22 +448,23 @@ void connectWiFi() {
   Serial.print(WiFi.SSID());
   Serial.print(", IP ");
   Serial.println(WiFi.localIP());
+  return true;
 }
 
+// One attempt per call. The loop retries every few seconds, so a dead broker
+// or a dead internet link never freezes the sensor / pump logic.
 void connectMQTT() {
-  while (!mqtt.connected()) {
-    String id = "shikor-esp32-" + String((uint32_t)ESP.getEfuseMac(), HEX);
-    Serial.print("MQTT...");
-    // last will: if this device disappears, the app is told straight away
-    if (mqtt.connect(id.c_str(), NULL, NULL, T_STATUS, 0, true, "offline")) {
-      Serial.println(" connected");
-      mqtt.publish(T_STATUS, "online", true);
-      mqtt.subscribe(T_CMD);
-      sendData();
-    } else {
-      Serial.printf(" failed rc=%d, retry in 2s\n", mqtt.state());
-      delay(2000);
-    }
+  if (mqtt.connected()) return;
+  String id = "shikor-esp32-" + String((uint32_t)ESP.getEfuseMac(), HEX);
+  Serial.print("MQTT...");
+  // last will: if this device disappears, the app is told straight away
+  if (mqtt.connect(id.c_str(), NULL, NULL, T_STATUS, 0, true, "offline")) {
+    Serial.println(" connected");
+    mqtt.publish(T_STATUS, "online", true);
+    mqtt.subscribe(T_CMD);
+    sendData();
+  } else {
+    Serial.printf(" failed rc=%d, will retry\n", mqtt.state());
   }
 }
 
@@ -417,7 +473,10 @@ void connectMQTT() {
 // ============================================================
 void setup() {
   Serial.begin(115200);
-  pinMode(PUMP_LED, OUTPUT);
+  pinMode(LED_GREEN, OUTPUT);
+  pinMode(LED_RED,   OUTPUT);
+  digitalWrite(LED_GREEN, LOW);
+  digitalWrite(LED_RED,   LOW);
   relayWrite(false);                 // pump OFF at boot — always
   delay(300);
 
@@ -430,46 +489,55 @@ void setup() {
   buildTopics();
   Serial.printf("topic  : %s\n", topicBase);
 
-  connectWiFi();
+  // read the soil first, so the LEDs already tell the truth while Wi-Fi connects
+  soil = readSoil();
+  updateLeds();
+
+  connectWiFi();                     // false = router away; the loop keeps trying
   mqtt.setServer("broker.hivemq.com", 1883);
   mqtt.setCallback(onMessage);
   mqtt.setBufferSize(384);           // the v2 payload is bigger than the default
-  connectMQTT();
-
-  soil = readSoil();
+  if (WiFi.status() == WL_CONNECTED) connectMQTT();
 }
 
-unsigned long tWifiLost = 0;
+unsigned long tWifiNudge = 0, tMqttTry = 0;
 
 void loop() {
-  if (WiFi.status() != WL_CONNECTED) {
-    // a brief router blip: just retry quietly for a while
-    if (tWifiLost == 0) { tWifiLost = millis(); WiFi.reconnect(); }
-    if (millis() - tWifiLost > 60000UL) {   // gone for a minute - ask for help
-      tWifiLost = 0;
-      connectWiFi();
-    }
-    delay(500);
-    return;
-  }
-  tWifiLost = 0;
-  if (!mqtt.connected()) connectMQTT();
-  mqtt.loop();
+  bool pumping = (state == WATERING || state == MANUAL);
 
+  // ---- network upkeep. It must never stop the sensor, LEDs or pump timers
+  //      below: with no Wi-Fi the device still waters and still shows red/green.
+  if (WiFi.status() == WL_CONNECTED) {
+    if (mqtt.connected())   mqtt.loop();               // may run a command -> may start the pump
+    else if (!pumping && millis() - tMqttTry >= 5000UL) {   // one quiet attempt, never while pumping
+      tMqttTry = millis();
+      connectMQTT();
+    }
+  } else if (millis() - tWifiNudge >= 30000UL) {       // router away: nudge the radio now and then
+    tWifiNudge = millis();
+    WiFi.reconnect();
+  }
+
+  // Take the time only AFTER the network part. A command handled above can have
+  // set tPumpStart a few ms "in the future" of an older reading, and the
+  // unsigned subtraction below would then wrap and stop the pump at once.
   unsigned long now = millis();
 
   // ---- read the soil every 5 seconds ----
   if (now - tRead >= 5000) {
     tRead = now;
     soil = readSoil();
-    Serial.printf("raw=%4d   soil=%3d%%\n", rawSoil, soil);
+    Serial.printf("raw=%4d   soil=%3d%%%s\n", rawSoil, soil,
+                  sensorFault ? "   SENSOR FAULT - check the probe wiring" : "");
   }
+  updateLeds();                                        // every pass, so the fault blink is smooth
 
   // ---- decide what to do ----
   switch (state) {
 
     case IDLE:
-      if (soil < LOW_LIMIT && quietFor() == 0) {
+      // a broken probe must never start the pump (it would read "wet" or "dry" at random)
+      if (!sensorFault && soil < LOW_LIMIT && quietFor() == 0) {
         if (autoMode) pumpOn(MAX_RUN_TIME, "auto");
         else          askPermission();
       }
@@ -481,11 +549,15 @@ void loop() {
         tSnooze = millis();                     // don't nag - try again later
         Serial.println("request expired - going quiet");
         sendData();
+      } else if (soil >= LOW_LIMIT + 5) {       // rain, or watered by hand: no longer needed
+        state = IDLE;
+        Serial.println("soil recovered - request withdrawn");
+        sendData();
       }
       break;
 
     case WATERING:
-      if (soil >= TARGET)                                pumpOff("target reached");
+      if (honourTarget && !sensorFault && soil >= TARGET) pumpOff("target reached");
       else if (now - tPumpStart >= (unsigned long)runSeconds * 1000UL)
                                                          pumpOff("time limit");
       break;
@@ -522,8 +594,10 @@ void loop() {
   ------------------------------------------------------------
   CHANGING THE Wi-Fi LATER, WITHOUT A LAPTOP
   ------------------------------------------------------------
-  1. Power the device where the old network is out of range, or hold the
-     BOOT button while plugging it in to forget the saved one.
+  1. Hold the BOOT button while plugging the device in. That forgets the
+     saved network and opens the setup hotspot. (Moving the device somewhere
+     the old router is out of range is NOT enough any more: by design it keeps
+     running offline instead of waiting in setup mode.)
   2. On a phone, join the Wi-Fi network "Shikor-Setup" (password shikor123).
   3. A setup page opens by itself. If it does not, open http://192.168.4.1
   4. Configure WiFi -> pick the network -> type the password -> Save.

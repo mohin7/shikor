@@ -6,6 +6,7 @@
 
 import { reactive, ref, computed } from 'vue'
 import mqtt from 'mqtt'
+import { t } from './useI18n'
 
 /* ---- settings, remembered per phone ------------------------------------- */
 const SETTINGS_KEY = 'shikor.settings.v1'
@@ -62,6 +63,7 @@ export const device = reactive({
   max:      20,
   left:     0,         // seconds remaining in the current run
   quiet:    0,         // seconds until the device may ask again
+  fault:    false,     // the probe reads impossible values (unplugged / shorted)
   rssi:     null,
   uptime:   null,
   lastSeen: 0
@@ -92,11 +94,13 @@ const LOG_MAX     = 40
 
 /* ---- derived ------------------------------------------------------------- */
 export const isWatering = computed(() => device.pump || device.state === 'WATERING')
-export const isDry      = computed(() => device.seen && device.soil < device.low)
+export const isDry      = computed(() => device.seen && !device.fault && device.soil < device.low)
 export const isWaiting  = computed(() => device.state === 'WAITING')
 
 export const soilColour = computed(() => {
   const s = device.soil
+  if (!device.seen) return 'var(--faint)'
+  if (device.fault) return 'var(--danger)'
   if (s < 15) return 'var(--m-0)'
   if (s < 35) return 'var(--m-25)'
   if (s < 55) return 'var(--m-50)'
@@ -106,13 +110,23 @@ export const soilColour = computed(() => {
 
 export const soilLabel = computed(() => {
   const s = device.soil
-  if (!device.seen) return '—'
-  if (s < 15) return 'খুব শুকনো'
-  if (s < 35) return 'শুকনো'
-  if (s < 55) return 'মোটামুটি'
-  if (s < 80) return 'ভালো'
-  return 'ভেজা'
+  if (!device.seen) return t('soil.unknown')
+  if (device.fault) return t('soil.fault')
+  if (s < 15) return t('soil.veryDry')
+  if (s < 35) return t('soil.dry')
+  if (s < 55) return t('soil.ok')
+  if (s < 80) return t('soil.good')
+  return t('soil.wet')
 })
+
+/* "3 h 59 min" / "৩ ঘণ্টা ৫৯ মিনিট"-style, in the current language */
+export function fmtDuration (totalSeconds) {
+  const s = Math.max(0, Math.floor(totalSeconds))
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  if (h) return `${h} ${t('unit.h')}${m ? ` ${m} ${t('unit.min')}` : ''}`
+  return `${Math.max(1, m)} ${t('unit.min')}`
+}
 
 /* how long the app (or the device) stays quiet, in words */
 export const quietLabel = computed(() => {
@@ -120,10 +134,7 @@ export const quietLabel = computed(() => {
   const fromDevice = device.quiet || 0
   const s = Math.max(fromPhone, fromDevice)
   if (s <= 0) return ''
-  const h = Math.floor(s / 3600)
-  const m = Math.round((s % 3600) / 60)
-  if (h) return `${h} ঘণ্টা ${m ? m + ' মিনিট' : ''}`.trim()
-  return `${Math.max(1, m)} মিনিট`
+  return fmtDuration(Math.round(s / 60) * 60)
 })
 
 /* ---- topics -------------------------------------------------------------- */
@@ -155,8 +166,8 @@ export function connect () {
 
   client.on('connect', () => {
     link.status = 'connected'
-    const t = T()
-    client.subscribe([t.data, t.ask, t.status], { qos: 0 })
+    const topics = T()
+    client.subscribe([topics.data, topics.ask, topics.status], { qos: 0 })
   })
 
   client.on('reconnect', () => { link.status = 'connecting' })
@@ -165,9 +176,9 @@ export function connect () {
 
   client.on('message', (topic, payload) => {
     const text = payload.toString()
-    const t = T()
+    const topics = T()
 
-    if (topic === t.status) {
+    if (topic === topics.status) {
       device.online = text.trim() === 'online'
       if (device.online) device.lastSeen = Date.now()
       return
@@ -177,13 +188,13 @@ export function connect () {
     try { msg = JSON.parse(text) } catch { return }
 
     /* ---- a fresh permission request ---- */
-    if (topic === t.ask) {
+    if (topic === topics.ask) {
       if (isSnoozed.value) return          // the user already said "not now"
       openAsk(msg.soil ?? device.soil, msg.limit ?? device.low)
       return
     }
 
-    if (topic !== t.data) return
+    if (topic !== topics.data) return
 
     device.seen = true
     device.online = true
@@ -213,6 +224,7 @@ export function connect () {
     if (typeof msg.rssi   === 'number') device.rssi   = msg.rssi
     if (typeof msg.up     === 'number') device.uptime = msg.up
 
+    device.fault  = !!msg.fault
     device.pump   = !!msg.pump
     device.auto   = !!msg.auto
     device.manual = !!msg.manual
@@ -335,26 +347,28 @@ export function saveSettings (next) {
 export function ago (ts) {
   if (!ts) return '—'
   const s = Math.floor((Date.now() - ts) / 1000)
-  if (s < 10) return 'এইমাত্র'
-  if (s < 60) return `${s} সেকেন্ড আগে`
+  if (s < 10) return t('ago.now')
+  if (s < 60) return t('ago.s', { n: s })
   const m = Math.floor(s / 60)
-  if (m < 60) return `${m} মিনিট আগে`
+  if (m < 60) return t('ago.m', { n: m })
   const h = Math.floor(m / 60)
-  if (h < 24) return `${h} ঘণ্টা আগে`
-  return `${Math.floor(h / 24)} দিন আগে`
+  if (h < 24) return t('ago.h', { n: h })
+  return t('ago.d', { n: Math.floor(h / 24) })
 }
 
 export function clockTime (ts) {
   return new Date(ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
 }
 
+/* the device sends its reason in English; map it to a translatable key */
+const REASON_KEYS = {
+  'app': 'reason.app',
+  'auto': 'reason.auto',
+  'manual': 'reason.manual',
+  'time limit': 'reason.time',
+  'target reached': 'reason.target',
+  'stopped from app': 'reason.stopped'
+}
 export function reasonLabel (r) {
-  return ({
-    app: 'অ্যাপ থেকে',
-    auto: 'স্বয়ংক্রিয়',
-    manual: 'ম্যানুয়াল',
-    'time limit': 'সময় শেষ',
-    'target reached': 'লক্ষ্যে পৌঁছেছে',
-    'stopped from app': 'অ্যাপ থেকে বন্ধ'
-  })[r] || r
+  return REASON_KEYS[r] ? t(REASON_KEYS[r]) : r
 }
