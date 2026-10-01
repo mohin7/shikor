@@ -1,17 +1,10 @@
 <script setup>
 import { computed } from 'vue'
-import { link, device, actions } from '../composables/useGarden'
+import { link, actions } from '../composables/useGarden'
 import { t, lang, toggleLang } from '../composables/useI18n'
 import { theme, toggleTheme } from '../composables/useTheme'
+import { openGuide } from '../composables/useGuide'
 import Icon from './Icon.vue'
-
-const state = computed(() => {
-  if (link.status === 'error')      return { k: 'bad',  t: t('status.failed') }
-  if (link.status !== 'connected')  return { k: 'wait', t: t('status.connecting') }
-  if (!device.seen)                 return { k: 'wait', t: t('status.searching') }
-  if (!device.online)               return { k: 'bad',  t: t('status.offline') }
-  return { k: 'ok', t: t('status.online') }
-})
 
 const spinning = computed(() => link.status === 'connecting')
 
@@ -26,6 +19,10 @@ const isDark = computed(() => theme.value === 'dark')
     </div>
 
     <div class="right">
+      <button class="reload" @click="openGuide" :aria-label="t('guide.open')" :title="t('guide.open')">
+        <Icon name="help" :size="17" />
+      </button>
+
       <button class="reload" :class="{ spin: spinning }" @click="actions.refresh"
               :aria-label="t('status.reload')" :title="t('status.reload')">
         <Icon name="refresh" :size="16" />
@@ -43,9 +40,6 @@ const isDark = computed(() => theme.value === 'dark')
         <Icon class="sun" name="sun" :size="17" />
       </button>
 
-      <div class="pill" :class="state.k" role="status">
-        <i></i><span>{{ state.t }}</span>
-      </div>
     </div>
   </header>
 </template>
@@ -109,25 +103,5 @@ const isDark = computed(() => theme.value === 'dark')
 .reload:active { transform: scale(.92); }
 .reload.spin svg { animation: turn .9s linear infinite; }
 @keyframes turn { to { transform: rotate(360deg); } }
-@media (max-width: 400px) { .name { display: none; } }
 
-.pill {
-  display: flex; align-items: center; gap: 7px;
-  font-size: 12px; font-weight: 600; white-space: nowrap;
-  padding: 5px 11px 5px 9px; border-radius: var(--r-pill);
-  border: 1px solid var(--border); background: var(--surface);
-  color: var(--muted);
-}
-.pill i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
-.pill.ok   { color: var(--leaf);   border-color: var(--leaf-line);   background: var(--leaf-wash); }
-.pill.wait { color: var(--warn);   border-color: var(--warn-line);   background: var(--warn-wash); }
-.pill.bad  { color: var(--danger); border-color: var(--danger-line); background: var(--danger-wash); }
-.pill.wait i { animation: blink 1.1s ease-in-out infinite; }
-@keyframes blink { 50% { opacity: .25; } }
-
-/* very narrow phones: keep the dot, drop the words */
-@media (max-width: 374px) {
-  .pill { padding: 8px; }
-  .pill span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-}
 </style>

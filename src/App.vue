@@ -5,6 +5,7 @@ import {
   actions, isSnoozed, quietLabel
 } from './composables/useGarden'
 import { t } from './composables/useI18n'
+import { openGuide, guideSeen, markSeen } from './composables/useGuide'
 
 import StatusBar       from './components/StatusBar.vue'
 import WaterScene      from './components/WaterScene.vue'
@@ -18,6 +19,7 @@ import DeviceCard      from './components/DeviceCard.vue'
 import ConnectionCard  from './components/ConnectionCard.vue'
 import AppearanceCard  from './components/AppearanceCard.vue'
 import PermissionSheet from './components/PermissionSheet.vue'
+import GuideSheet      from './components/GuideSheet.vue'
 import TabBar          from './components/TabBar.vue'
 import Icon            from './components/Icon.vue'
 
@@ -60,6 +62,16 @@ const parked = computed(() =>
           </button>
         </Transition>
 
+        <Transition name="fade">
+          <div v-if="!guideSeen" class="welcome">
+            <button class="wb" @click="openGuide">
+              <span class="wi"><Icon name="book" :size="18" /></span>
+              <span class="wt"><b>{{ t('guide.banner.t') }}</b><small>{{ t('guide.banner.d') }}</small></span>
+            </button>
+            <button class="wx" @click="markSeen" :aria-label="t('guide.close')"><Icon name="close" :size="15" /></button>
+          </div>
+        </Transition>
+
         <WaterScene />
 
         <PrimaryAction :seconds="seconds" @help="tab = 'settings'" />
@@ -76,6 +88,10 @@ const parked = computed(() =>
 
       <!-- ================= SETTINGS ================= -->
       <section v-show="tab === 'settings'" class="stack">
+        <button class="card guide-row" @click="openGuide">
+          <span class="ti"><Icon name="book" :size="15" :stroke="2" /></span>
+          <span class="gt"><b>{{ t('guide.open') }}</b><small>{{ t('guide.sub') }}</small></span>
+        </button>
         <AppearanceCard />
         <ThresholdCard />
         <DeviceCard />
@@ -93,6 +109,7 @@ const parked = computed(() =>
     </main>
 
     <PermissionSheet />
+    <GuideSheet />
     <TabBar v-model="tab" />
   </div>
 </template>
@@ -124,6 +141,26 @@ main {
 .parked:active { transform: scale(.99); }
 .pt { font-size: 13.5px; font-weight: 600; color: var(--text-dim); }
 .pd { font-size: 11.5px; color: var(--faint); }
+
+.welcome { position: relative; }
+.wb {
+  width: 100%; display: flex; align-items: center; gap: 12px; text-align: left;
+  padding: 12px 40px 12px 14px; border-radius: var(--r-md);
+  background: var(--leaf-wash); border: 1px solid var(--leaf-line); box-shadow: var(--shadow-sm);
+}
+.wb:active { transform: scale(.99); }
+.wi { display: grid; place-items: center; width: 36px; height: 36px; flex: none; border-radius: 11px; color: var(--leaf); background: var(--surface); box-shadow: inset 0 0 0 1px var(--leaf-line); }
+.wt { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.wt b { font-size: 14px; color: var(--text); }
+.wt small { font-size: 12.5px; color: var(--text-dim); line-height: 1.4; }
+.wx { position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: var(--muted); }
+.wx:active { transform: scale(.9); }
+
+.guide-row { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; }
+.guide-row:active { transform: scale(.99); }
+.gt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.gt b { font-size: 14.5px; }
+.gt small { font-size: 12.5px; color: var(--muted); line-height: 1.4; }
 
 .about p { font-size: 13.5px; color: var(--text-dim); line-height: 1.6; }
 .about p + p { margin-top: var(--s-3); }

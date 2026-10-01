@@ -9,6 +9,7 @@
 import { computed, ref, onBeforeUnmount } from 'vue'
 import { device, isWatering, soilColour, soilLabel, log, ago } from '../composables/useGarden'
 import { t } from '../composables/useI18n'
+import StatusPill from './StatusPill.vue'
 
 const pct = computed(() => Math.max(0, Math.min(100, device.seen ? device.soil : 0)))
 
@@ -181,6 +182,8 @@ const aria = computed(() =>
       <div class="raw" v-if="device.seen">{{ t('scene.moisture') }}</div>
     </div>
 
+    <StatusPill class="conn" />
+
     <div class="foot">
       <span v-if="isWatering" class="now"><i></i>{{ t('scene.watering') }}</span>
       <span v-else-if="log.length" class="hint">{{ t('scene.last', { time: ago(log[0].t) }) }}</span>
@@ -282,6 +285,7 @@ const aria = computed(() =>
 .pct { font-size: 20px; font-weight: 600; color: var(--muted); transform: translateY(-3px); }
 .raw { font-size: 12px; font-weight: 600; color: var(--muted); margin-top: 4px; }
 
+.conn { position: absolute; right: var(--s-4); top: var(--s-4); pointer-events: none; }
 .foot {
   position: absolute; left: var(--s-5); bottom: var(--s-4);
   pointer-events: none; font-size: 11.5px; font-weight: 600;
