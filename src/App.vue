@@ -20,6 +20,7 @@ import ConnectionCard  from './components/ConnectionCard.vue'
 import AppearanceCard  from './components/AppearanceCard.vue'
 import PermissionSheet from './components/PermissionSheet.vue'
 import GuideSheet      from './components/GuideSheet.vue'
+import InstallSheet    from './components/InstallSheet.vue'
 import TabBar          from './components/TabBar.vue'
 import Icon            from './components/Icon.vue'
 
@@ -110,6 +111,7 @@ const parked = computed(() =>
 
     <PermissionSheet />
     <GuideSheet />
+    <InstallSheet />
     <TabBar v-model="tab" />
   </div>
 </template>

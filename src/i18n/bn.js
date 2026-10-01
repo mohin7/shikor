@@ -180,5 +180,22 @@ export default {
   'guide.led.g': 'সবুজ — মাটি ঠিক আছে।',
   'guide.led.r': 'লাল — মাটি শুকনো।',
   'guide.led.rb': 'লাল ঝলকাচ্ছে — সেন্সরে সমস্যা, প্রোবের তার দেখো।',
-  'guide.led.both': 'দুটোই একসাথে ঝলকালে — Wi-Fi রিসেট হচ্ছে।'
+  'guide.led.both': 'দুটোই একসাথে ঝলকালে — Wi-Fi রিসেট হচ্ছে।',
+
+  /* install + status details */
+  'install.btn': 'অ্যাপ ইনস্টল',
+  'install.title': 'শিকড় ফোনে ইনস্টল করো',
+  'install.sub': 'সাধারণ অ্যাপের মতো পুরো স্ক্রিনে খুলবে — ব্রাউজারের বার থাকবে না।',
+  'install.ios.h': 'iPhone / iPad (Safari)',
+  'install.ios.1': 'Safari-র নিচে Share বাটন (তীরচিহ্নওয়ালা চৌকো) চাপো।',
+  'install.ios.2': 'নিচে স্ক্রল করে Add to Home Screen চাপো।',
+  'install.ios.3': 'Add চাপো। শিকড় এখন হোম স্ক্রিনে থাকবে।',
+  'install.and.h': 'Android (Chrome)',
+  'install.and.1': 'Chrome-এর ডান-ওপরের ⋮ মেনু চাপো।',
+  'install.and.2': 'Install app (বা Add to Home screen) চাপো।',
+  'install.and.3': 'নিশ্চিত করো। শিকড় এখন হোম স্ক্রিনে থাকবে।',
+  'status.s.ok': 'অনলাইন',
+  'status.s.wait': 'যুক্ত হচ্ছে',
+  'status.s.bad': 'অফলাইন',
+  'status.s.fail': 'ব্যর্থ'
 }

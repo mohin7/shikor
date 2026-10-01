@@ -180,5 +180,22 @@ export default {
   'guide.led.g': 'Green — the soil is fine.',
   'guide.led.r': 'Red — the soil is dry.',
   'guide.led.rb': 'Red blinking — sensor problem, check the probe wiring.',
-  'guide.led.both': 'Both flash together — Wi-Fi is being reset.'
+  'guide.led.both': 'Both flash together — Wi-Fi is being reset.',
+
+  /* install + status details */
+  'install.btn': 'Install app',
+  'install.title': 'Install Shikor on your phone',
+  'install.sub': 'It opens full screen like a normal app — no browser bars.',
+  'install.ios.h': 'iPhone / iPad (Safari)',
+  'install.ios.1': 'Tap the Share button (the square with an arrow) at the bottom of Safari.',
+  'install.ios.2': 'Scroll down and tap Add to Home Screen.',
+  'install.ios.3': 'Tap Add. Shikor now sits on your home screen.',
+  'install.and.h': 'Android (Chrome)',
+  'install.and.1': 'Tap the ⋮ menu at the top right of Chrome.',
+  'install.and.2': 'Tap Install app (or Add to Home screen).',
+  'install.and.3': 'Confirm. Shikor now sits on your home screen.',
+  'status.s.ok': 'Online',
+  'status.s.wait': 'Connecting',
+  'status.s.bad': 'Offline',
+  'status.s.fail': 'Link failed'
 }

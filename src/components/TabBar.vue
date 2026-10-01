@@ -11,6 +11,7 @@ const tabs = [
 </script>
 
 <template>
+  <div class="dock">
   <nav class="tabs">
     <button v-for="tab in tabs" :key="tab.id"
             :class="{ on: model === tab.id }"
@@ -20,20 +21,23 @@ const tabs = [
       <span class="lab">{{ t(tab.key) }}</span>
     </button>
   </nav>
+  </div>
 </template>
 
 <style scoped>
-.tabs {
+.dock {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
-  display: grid; grid-template-columns: repeat(3, 1fr);
-  gap: var(--s-1);
   max-width: 460px; margin: 0 auto;
-  padding: 8px var(--s-4) calc(8px + env(safe-area-inset-bottom));
   background: var(--bar-bg);
   backdrop-filter: blur(22px) saturate(150%);
   -webkit-backdrop-filter: blur(22px) saturate(150%);
   border-top: 1px solid var(--border);
   box-shadow: 0 -10px 30px -18px rgba(20, 50, 30, .25);
+}
+.tabs {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: var(--s-1);
+  padding: 8px var(--s-4) calc(8px + env(safe-area-inset-bottom));
 }
 .tabs button {
   display: flex; flex-direction: column; align-items: center; gap: 3px;

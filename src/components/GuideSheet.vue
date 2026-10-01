@@ -2,6 +2,7 @@
 import { watch, onUnmounted } from 'vue'
 import { guideOpen, closeGuide } from '../composables/useGuide'
 import { t } from '../composables/useI18n'
+import { installed, install } from '../composables/useInstall'
 import Icon from './Icon.vue'
 
 const steps = [
@@ -49,6 +50,9 @@ onUnmounted(() => { document.documentElement.style.overflow = ''; removeEventLis
                   <li v-for="k in s.subs" :key="k"><b class="num">{{ k }}</b><span>{{ t(`guide.${s.id}.${k}`) }}</span></li>
                 </ol>
                 <p v-if="s.note" class="note">{{ t(`guide.${s.id}.note`) }}</p>
+                <button v-if="s.id === 's6' && !installed" class="inst" @click="install">
+                  <Icon name="download" :size="15" :stroke="2.2" />{{ t('install.btn') }}
+                </button>
               </div>
             </li>
           </ol>
@@ -118,6 +122,13 @@ header p { font-size: 13px; color: var(--muted); margin-top: 2px; line-height: 1
   margin-top: var(--s-3); padding: 10px 12px; border-radius: var(--r-sm); font-size: 12.5px;
   color: var(--warn); background: var(--warn-wash); border: 1px solid var(--warn-line);
 }
+
+.inst {
+  display: inline-flex; align-items: center; gap: 7px; margin-top: var(--s-3);
+  padding: 10px 16px; border-radius: var(--r-pill); font-size: 13.5px; font-weight: 700;
+  color: var(--on-leaf); background: linear-gradient(165deg, var(--btn-leaf-a), var(--btn-leaf-b)); box-shadow: var(--glow-leaf);
+}
+.inst:active { transform: scale(.96); }
 
 .leds { margin-top: var(--s-6); padding: var(--s-4); background: var(--bg-elev); border: 1px solid var(--hairline); border-radius: var(--r-md); }
 .leds h3 { font-size: 14px; font-weight: 700; margin-bottom: 8px; }

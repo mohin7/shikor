@@ -4,6 +4,7 @@ import './styles/tokens.css'
 import './styles/base.css'
 import { applyTheme } from './composables/useTheme'
 import { applyLang } from './composables/useI18n'
+import './composables/useInstall'   /* start listening for the install prompt early */
 
 /* index.html already set both before first paint; this keeps the meta tags and
    the <html> attributes in step with the saved choice. */
