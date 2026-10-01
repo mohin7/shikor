@@ -15,7 +15,10 @@
     "Shikor-Setup" (password: shikor123). Join it from a phone; a setup page
     opens by itself. Pick the Wi-Fi, type the password, Save. The device
     remembers it and reboots into the network.
-    To change the network later: hold the BOOT button while powering on.
+    To change the network later: hold the BOOT button for 3 seconds while the
+    device is running (both LEDs flash, then it restarts into setup mode).
+    Do NOT hold BOOT while plugging in: that puts the ESP32 into its flashing
+    mode and the firmware never starts.
     Once a network is saved, a router that is switched off or out of range
     does NOT trap the device in setup mode: it keeps sensing, showing the
     LEDs and watering on its own, and rejoins the network when it returns.
@@ -411,6 +414,36 @@ void onMessage(char* topic, byte* payload, unsigned int len) {
 }
 
 // ============================================================
+//  BOOT button  —  hold 3 s while running to forget the saved Wi-Fi
+//  (Holding it at power-up would start the ESP32's flashing mode instead.)
+//  Ignored while the pump runs, so a bump can never interrupt watering.
+// ============================================================
+const unsigned long BOOT_HOLD_MS = 3000UL;
+unsigned long tBootDown = 0;
+
+void forgetWiFiAndRestart() {
+  Serial.println("[wifi] BOOT held 3 s - forgetting the saved network");
+  for (int i = 0; i < 6; i++) {                // both LEDs flash: "got it"
+    digitalWrite(LED_RED,   i % 2 == 0);
+    digitalWrite(LED_GREEN, i % 2 == 0);
+    delay(150);
+  }
+  WiFiManager wm;
+  wm.resetSettings();
+  wifiEverOk = false;
+  saveSettings();
+  delay(200);
+  ESP.restart();                                // boots straight into the setup hotspot
+}
+
+void checkBootButton() {
+  if (digitalRead(RESET_PIN) != LOW) { tBootDown = 0; return; }
+  if (isPumping())                   { tBootDown = 0; return; }
+  if (tBootDown == 0) tBootDown = millis();
+  else if (millis() - tBootDown >= BOOT_HOLD_MS) forgetWiFiAndRestart();
+}
+
+// ============================================================
 //  connectivity
 // ============================================================
 void startPortal(const char* why) {
@@ -437,17 +470,6 @@ bool connectWiFi() {
   WiFiManagerParameter p_topic("topic", "MQTT topic base", topicBase,
                                sizeof(topicBase) - 1);
   wm.addParameter(&p_topic);
-
-  // holding BOOT at power-up wipes the stored network
-  pinMode(RESET_PIN, INPUT_PULLUP);
-  if (digitalRead(RESET_PIN) == LOW) {
-    Serial.println("[wifi] BOOT held - forgetting the saved network");
-    wm.resetSettings();
-    wifiEverOk = false;
-    saveSettings();
-    wm.setEnableConfigPortal(true);      // forgotten on purpose: open the setup page
-    delay(400);
-  }
 
   if (!wifiEverOk) startPortal("no saved network - opening the setup hotspot");
   else             Serial.println("[wifi] joining the saved network...");
@@ -563,6 +585,7 @@ void setup() {
   Serial.begin(115200);
   pinMode(LED_GREEN, OUTPUT);
   pinMode(LED_RED,   OUTPUT);
+  pinMode(RESET_PIN, INPUT_PULLUP);
   digitalWrite(LED_GREEN, LOW);
   digitalWrite(LED_RED,   LOW);
   relayWrite(false);                 // pump OFF at boot — always
@@ -590,6 +613,7 @@ void setup() {
 }
 
 void loop() {
+  checkBootButton();
   networkUpkeep();
 
   // Take the time only AFTER the network part. A command handled above can have
@@ -632,8 +656,9 @@ void loop() {
   ------------------------------------------------------------
   CHANGING THE Wi-Fi LATER, WITHOUT A LAPTOP
   ------------------------------------------------------------
-  1. Hold the BOOT button while plugging the device in. That forgets the
-     saved network and opens the setup hotspot. (Moving the device somewhere
+  1. Power the device normally, wait for the red then green LED flash, then
+     hold the BOOT button for 3 seconds. Both LEDs flash, the saved network is
+     forgotten and the setup hotspot opens. (Moving the device somewhere
      the old router is out of range is NOT enough: by design it keeps running
      offline instead of waiting in setup mode.)
   2. On a phone, join the Wi-Fi network "Shikor-Setup" (password shikor123).
